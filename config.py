@@ -1,10 +1,6 @@
-from pathlib import Path
+OLLAMA_URL = "http://localhost:11434/api/chat"
+OLLAMA_MODEL = "qwen-bala"
 
-MODEL_PATH = Path(r"C:\Users\del\.ollama\custom\qwen_bala_Q5_K_M.gguf")
-
-# llama-cpp-python settings
-N_CTX = 2048
-N_GPU_LAYERS = 0  # CPU only; set >0 if GPU available
 TEMPERATURE = 0.1
 MAX_TOKENS = 10
 

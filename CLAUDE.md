@@ -21,7 +21,7 @@
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
-| P1 | 后端骨架 + 文本分类迁移 | 🔧 进行中 |
+| P1 | 后端骨架 + 文本分类迁移 | ✅ 完成 |
 | P2 | 音频转录 Pipeline（faster-whisper + whisperX） | ⬜ 待开始 |
 | P3 | 完整 Pipeline + 统计报告 | ⬜ 待开始 |
 | P4 | 前端完善（UI/导出/历史） | ⬜ 待开始 |
@@ -41,8 +41,8 @@
                     │         ▼                   ▼             │
                     │  ┌─────────────┐   ┌─────────────────┐  │
                     │  │ classifier  │   │ asr.py          │  │
-                    │  │ llama-cpp   │   │ faster-whisper  │  │
-                    │  │ (gguf)      │   │ + whisperX      │  │
+                    │  │ httpx →     │   │ faster-whisper  │  │
+                    │  │ Ollama API  │   │ + whisperX      │  │
                     │  └─────────────┘   └─────────────────┘  │
                     │                                          │
                     │  ┌──────────────────────────────────┐   │
@@ -54,8 +54,8 @@
                                       │
                                       ▼
                     ┌──────────────────────────────────────────┐
-                    │  qwen_bala_Q5_K_M.gguf (5.2GB)          │
-                    │  Qwen2.5-7B-Instruct 微调 → Q5_K_M 量化  │
+                    │  Ollama (localhost:11434)                 │
+                    │  qwen-bala (Qwen2.5-7B 微调, GPU 加速)    │
                     └──────────────────────────────────────────┘
 ```
 
@@ -64,7 +64,7 @@
 ## 技术栈
 
 - **后端**: Python + FastAPI + uvicorn
-- **分类推理**: llama-cpp-python（直接加载 gguf，不依赖 Ollama）
+- **分类推理**: Ollama API（开发阶段，GPU 加速；打包时可换 llama-cpp-python）
 - **ASR**: faster-whisper（本地 Whisper）
 - **说话人分离**: whisperX + pyannote
 - **前端**: vanilla HTML/CSS/JS
@@ -83,7 +83,7 @@ arise-care/
 │   │   ├── transcribe.py    # POST /api/transcribe（音频转录）
 │   │   └── report.py        # GET /api/report/{session_id}
 │   ├── services/
-│   │   ├── classifier.py    # llama-cpp-python 加载 gguf 推理
+│   │   ├── classifier.py    # httpx 调用 Ollama API 分类
 │   │   ├── asr.py           # faster-whisper + whisperX diarization
 │   │   └── pipeline.py      # 编排：音频 → 转录 → 分句 → 分类 → 统计
 │   ├── models/
@@ -93,7 +93,7 @@ arise-care/
 ├── legacy/                   # Node.js 原型（参考用）
 │   ├── server.js
 │   └── index.html
-├── config.py                 # 模型路径、端口等配置
+├── config.py                 # Ollama URL、模型名、推理参数
 ├── requirements.txt
 └── paper/                    # 论文（gitignore）
 ```
@@ -108,8 +108,9 @@ arise-care/
 
 ## 模型
 
-- 模型文件: `C:\Users\del\.ollama\custom\qwen_bala_Q5_K_M.gguf`（Q5_K_M 量化，5.2GB）
-- 原始模型: Qwen2.5-7B-Instruct 微调，从 fp16 量化而来
+- Ollama 模型名: `qwen-bala`
+- 底层: Qwen2.5-7B-Instruct 微调 → Q5_K_M 量化 gguf（5.2GB）
+- 打包分发策略：开发用 Ollama API；未来可蒸馏到小模型（1.5B/3B ~1GB）内嵌分发
 
 ## API
 
@@ -126,6 +127,7 @@ Response: { "segments": [...], "speakers": [...] }
 ## 启动
 
 ```bash
+# 确保 Ollama 在运行（ollama serve）
 uvicorn app.main:app --reload
 # http://localhost:8000
 ```
@@ -135,4 +137,3 @@ uvicorn app.main:app --reload
 ## 已知问题 / 坑
 
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
-- ⚠️ llama-cpp-python Windows 需预编译 wheel（无 MSVC 编译器）

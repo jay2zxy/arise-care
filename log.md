@@ -23,28 +23,36 @@
 
 **技术决策**：
 - 项目正式命名为 **arise-care**
-- 架构方向：Node.js + Ollama → Python FastAPI + llama-cpp-python
+- 架构方向：Node.js → Python FastAPI，分类继续用 Ollama API
 - ASR 方案：faster-whisper（本地 Whisper，论文也提到作为替代）
 - 说话人分离：whisperX + pyannote
 - 打包方案：Tauri（闭源桌面应用，医疗场景）
-- 模型分发：应用不内嵌模型，启动时指定路径或单独下载
+- 模型分发：开发阶段用 Ollama API（GPU 开箱即用）；打包时可换 llama-cpp-python 或蒸馏小模型
 
 **技术调研**：
-- 📊 依赖体积：fastapi + uvicorn + llama-cpp-python 约 50-70MB
-- 📊 模型体积：Q5_K_M 量化 5.2GB，后续可压缩（Q4_K_M ~4.4GB / 蒸馏到 1.5B/3B）
-- ⚠️ llama-cpp-python Windows 编译失败（无 MSVC），需预编译 wheel
+- 📊 依赖体积：fastapi + uvicorn + httpx 很轻量
+- 📊 模型体积：Q5_K_M 量化 5.2GB，后续可蒸馏到 1.5B/3B (~1GB) 内嵌分发
+- ⚠️ llama-cpp-python Windows 编译需预编译 wheel（备选方案，当前不用）
 
 **项目初始化**：
 - ✅ GitHub repo: jay2zxy/arise-care
 - ✅ 创建 main 分支 + jay-dev 开发分支
 - ✅ 初始提交：.gitignore, README, CLAUDE.md, log.md, legacy/
 - ✅ 旧版 Node.js 代码移入 `legacy/`（server.js, index.html）
-- ✅ llama-cpp-python 通过预编译 wheel 安装成功
-- ✅ fastapi, uvicorn 安装完成
+- ✅ fastapi, uvicorn, httpx 安装完成
 - ✅ 项目目录结构创建：app/{routers,services,models,static}, data/
 
+**Phase 1 完成**：
+- ✅ `config.py`：Ollama URL、模型名、推理参数
+- ✅ `app/services/classifier.py`：httpx 调用 Ollama API 分类（替代 llama-cpp-python）
+- ✅ `app/routers/classify.py`：`POST /api/classify` 端点
+- ✅ `app/models/schemas.py`：Pydantic 数据模型
+- ✅ `app/main.py`：FastAPI 入口 + 静态文件服务
+- ✅ `app/static/index.html`：前端迁移，API 路径改为 `/api/classify`
+- ✅ 分类验证：DIRECTED/GUIDED/NONE 均正确
+- ✅ Git: e426e65
+
 **下一步**：
-- ⬜ Phase 1：config.py → classifier.py → main.py → 前端迁移
 - ⬜ Phase 2：faster-whisper + whisperX 音频转录
 - ⬜ Phase 3：完整 pipeline + 统计报告
 - ⬜ Phase 4：前端完善
