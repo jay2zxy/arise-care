@@ -17,12 +17,12 @@
 
 ---
 
-## 项目状态（截至 2026-03-31）
+## 项目状态（截至 2026-04-01）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
 | P1 | 后端骨架 + 文本分类迁移 | ✅ 完成 |
-| P2 | 音频转录 Pipeline（faster-whisper + whisperX） | ⬜ 待开始 |
+| P2 | 音频转录 Pipeline（faster-whisper + whisperX） | 🔧 进行中 |
 | P3 | 完整 Pipeline + 统计报告 | ⬜ 待开始 |
 | P4 | 前端完善（UI/导出/历史） | ⬜ 待开始 |
 
@@ -137,3 +137,5 @@ uvicorn app.main:app --reload
 ## 已知问题 / 坑
 
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
+- ⚠️ faster-whisper GPU 需要 CUDA 12（cublas64_12.dll），当前缺失，暂用 CPU 模式
+- GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB，剩余不多
