@@ -9,3 +9,8 @@ SYSTEM_PROMPT = (
     "Classify the following therapist utterance as exactly one of: DIRECTED, GUIDED, or NONE. "
     "Reply with only the label, nothing else."
 )
+
+# ASR settings
+WHISPER_MODEL = "small"
+WHISPER_DEVICE = "cpu"
+WHISPER_COMPUTE_TYPE = "int8"

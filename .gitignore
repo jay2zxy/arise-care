@@ -24,3 +24,11 @@ Thumbs.db
 
 # Env
 .env
+
+# Claude Code
+.claude/
+
+# Test files
+*.m4a
+*.wav
+*.mp3

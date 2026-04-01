@@ -52,7 +52,25 @@
 - ✅ 分类验证：DIRECTED/GUIDED/NONE 均正确
 - ✅ Git: e426e65
 
-**下一步**：
-- ⬜ Phase 2：faster-whisper + whisperX 音频转录
+### 2026-04-01 - Session 3: Phase 2 音频转录
+
+**环境**：
+- ✅ 创建 venv 虚拟环境，依赖隔离
+- ✅ 全局 Python 清理，移除 arise-care 相关包
+- ✅ faster-whisper 安装成功
+
+**Phase 2 进行中**：
+- ✅ `app/services/asr.py`：faster-whisper 转录服务（small 模型）
+- ✅ `app/routers/transcribe.py`：`POST /api/transcribe` 端点
+- ✅ `app/models/schemas.py`：新增 TranscribeSegment/TranscribeResponse
+- ✅ 转录测试通过（r.m4a → "Please rise your left arm slowly."）
+
+**踩坑**：
+- ⚠️ faster-whisper GPU 模式需要 cublas64_12.dll（CUDA 12），本机未安装，暂用 CPU
+- ⚠️ GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB RTX 3070，Whisper 无法共享 GPU
+- ⚠️ python-multipart 未在 requirements.txt 中，文件上传报错
+
+**待完成**：
+- ⬜ speaker diarization（pyannote，需 HuggingFace token）
 - ⬜ Phase 3：完整 pipeline + 统计报告
-- ⬜ Phase 4：前端完善
+- ⬜ Phase 4：前端完善（Google AI Studio 风格 dashboard）
