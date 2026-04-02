@@ -3,3 +3,6 @@ uvicorn
 httpx
 faster-whisper
 python-multipart
+pyannote.audio
+python-dotenv
+av
