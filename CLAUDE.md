@@ -142,3 +142,4 @@ uvicorn app.main:app --reload
 - ⚠️ pyannote 依赖 PyTorch（~800MB），打包时用 torch CPU-only 或 ONNX 优化
 - ⚠️ torchcodec 在 Windows 不可用，已卸载，音频解码走 PyAV
 - GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB，whisper + pyannote 跑 CPU
+- speaker 对齐用中点匹配（asr.py:91），理论上 whisper/pyannote 切分不一致时中点可能落空隙标 UNKNOWN，但康复对话轮次清晰，实际风险低。未来可改用重叠比例匹配
