@@ -71,6 +71,30 @@
 - ⚠️ python-multipart 未在 requirements.txt 中，文件上传报错
 
 **待完成**：
-- ⬜ speaker diarization（pyannote，需 HuggingFace token）
+- ⬜ 端到端测试：上传多人对话音频验证 diarization 效果
 - ⬜ Phase 3：完整 pipeline + 统计报告
 - ⬜ Phase 4：前端完善（Google AI Studio 风格 dashboard）
+
+### 2026-04-01 - Session 4: Phase 2 说话人分离
+
+**Speaker Diarization 集成**：
+- ✅ HuggingFace 账号注册，接受 pyannote 模型协议（segmentation-3.0, speaker-diarization-3.1, speaker-diarization-community-1）
+- ✅ 创建 HF Access Token，存入 `.env`
+- ✅ 安装 pyannote.audio（依赖 PyTorch ~800MB）
+- ✅ 安装 PyAV（av）替代系统 FFmpeg，解决 Windows 音频解码问题
+- ✅ 卸载 torchcodec（Windows 上 DLL 缺失导致 torchaudio 崩溃）
+- ✅ Diarization 测试通过（r.m4a → SPEAKER_00, 1.2s-3.8s）
+- ✅ `asr.py` 重构：新增 `diarize()`, `transcribe_with_diarization()`, `load_audio_pyav()`
+- ✅ `transcribe.py`：新增 `?diarize=true` 查询参数
+- ✅ `schemas.py`：新增 `SpeakerTurn` 模型，`TranscribeSegment` 加 `speaker` 字段
+
+**踩坑**：
+- ⚠️ pyannote.audio 4.0 API 变化：`Pipeline()` 返回 `DiarizeOutput`，需用 `.speaker_diarization` 属性获取 annotation
+- ⚠️ torchcodec 在 Windows 缺 FFmpeg DLL，import 层面崩溃阻塞 torchaudio，卸载后用 PyAV 解决
+- ⚠️ pyannote 需要接受 3 个模型协议（segmentation-3.0 + speaker-diarization-3.1 + speaker-diarization-community-1）
+- ⚠️ `use_auth_token` 参数在新版已改为 `token`
+- ⚠️ pyannote 依赖 PyTorch，venv 体积增至 ~1.5GB；打包时可用 torch CPU-only 版本压缩
+
+**技术决策**：
+- HF Token 仅用于首次下载模型，打包分发时可内嵌模型文件（~20MB）绕过 token
+- 用 PyAV 读音频而非系统 FFmpeg，减少外部依赖

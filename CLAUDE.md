@@ -22,7 +22,7 @@
 | Phase | 内容 | 状态 |
 |-------|------|------|
 | P1 | 后端骨架 + 文本分类迁移 | ✅ 完成 |
-| P2 | 音频转录 Pipeline（faster-whisper + whisperX） | 🔧 进行中 |
+| P2 | 音频转录 + 说话人分离（faster-whisper + pyannote） | 🔧 进行中 |
 | P3 | 完整 Pipeline + 统计报告 | ⬜ 待开始 |
 | P4 | 前端完善（UI/导出/历史） | ⬜ 待开始 |
 
@@ -42,7 +42,7 @@
                     │  ┌─────────────┐   ┌─────────────────┐  │
                     │  │ classifier  │   │ asr.py          │  │
                     │  │ httpx →     │   │ faster-whisper  │  │
-                    │  │ Ollama API  │   │ + whisperX      │  │
+                    │  │ Ollama API  │   │ + pyannote(PyAV)│  │
                     │  └─────────────┘   └─────────────────┘  │
                     │                                          │
                     │  ┌──────────────────────────────────┐   │
@@ -66,7 +66,7 @@
 - **后端**: Python + FastAPI + uvicorn
 - **分类推理**: Ollama API（开发阶段，GPU 加速；打包时可换 llama-cpp-python）
 - **ASR**: faster-whisper（本地 Whisper）
-- **说话人分离**: whisperX + pyannote
+- **说话人分离**: pyannote.audio 4.0 + PyAV（不依赖系统 FFmpeg）
 - **前端**: vanilla HTML/CSS/JS
 - **打包**: Tauri（闭源桌面应用）
 
@@ -84,7 +84,7 @@ arise-care/
 │   │   └── report.py        # GET /api/report/{session_id}
 │   ├── services/
 │   │   ├── classifier.py    # httpx 调用 Ollama API 分类
-│   │   ├── asr.py           # faster-whisper + whisperX diarization
+│   │   ├── asr.py           # faster-whisper + pyannote diarization
 │   │   └── pipeline.py      # 编排：音频 → 转录 → 分句 → 分类 → 统计
 │   ├── models/
 │   │   └── schemas.py       # Pydantic 数据模型
@@ -119,9 +119,10 @@ POST /api/classify
 Body: { "text": "治疗师话语" }
 Response: { "input": "...", "classification": "DIRECTED|GUIDED|NONE" }
 
-POST /api/transcribe
+POST /api/transcribe?diarize=false
 Body: multipart/form-data, file=音频文件
-Response: { "segments": [...], "speakers": [...] }
+Response: { "segments": [{"start", "end", "text", "speaker?"}], "speakers?": [...] }
+# diarize=true 时返回带说话人标签的转录 + 说话人时间轴
 ```
 
 ## 启动
@@ -138,4 +139,6 @@ uvicorn app.main:app --reload
 
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
 - ⚠️ faster-whisper GPU 需要 CUDA 12（cublas64_12.dll），当前缺失，暂用 CPU 模式
-- GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB，剩余不多
+- ⚠️ pyannote 依赖 PyTorch（~800MB），打包时用 torch CPU-only 或 ONNX 优化
+- ⚠️ torchcodec 在 Windows 不可用，已卸载，音频解码走 PyAV
+- GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB，whisper + pyannote 跑 CPU
