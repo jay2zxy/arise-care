@@ -17,13 +17,13 @@
 
 ---
 
-## 项目状态（截至 2026-04-01）
+## 项目状态（截至 2026-04-09）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
 | P1 | 后端骨架 + 文本分类迁移 | ✅ 完成 |
-| P2 | 音频转录 + 说话人分离（faster-whisper + pyannote） | 🔧 进行中 |
-| P3 | 完整 Pipeline + 统计报告 | ⬜ 待开始 |
+| P2 | 音频转录 + 说话人分离（faster-whisper + pyannote） | ✅ 完成 |
+| P3 | 完整 Pipeline + 统计报告 | ✅ 完成 |
 | P4 | 前端完善（UI/导出/历史） | ⬜ 待开始 |
 
 ---
@@ -81,7 +81,7 @@ arise-care/
 │   ├── routers/
 │   │   ├── classify.py      # POST /api/classify（文本分类）
 │   │   ├── transcribe.py    # POST /api/transcribe（音频转录）
-│   │   └── report.py        # GET /api/report/{session_id}
+│   │   └── pipeline.py      # POST /api/analyze（完整 pipeline）
 │   ├── services/
 │   │   ├── classifier.py    # httpx 调用 Ollama API 分类
 │   │   ├── asr.py           # faster-whisper + pyannote diarization
