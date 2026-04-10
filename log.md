@@ -115,3 +115,12 @@
 
 **待完成**：
 - ⬜ Phase 4：前端可视化报告（饼图 + 逐句时间轴 + 导出）
+
+### 2026-04-09 - Session 5 (续): Phase 4 前端初版
+
+**完成内容**：
+- ✅ 重写 `app/static/index.html`，两 tab 布局
+- ✅ Text Classify tab：文字输入分类 + 历史记录
+- ✅ Session Analysis tab：音频上传（拖拽/点击）→ 调 `/api/analyze` → 展示报告
+- ✅ 报告展示：DIRECTED/GUIDED/NONE 统计卡片 + 彩色进度条 + 说话人时长 + 逐句转录
+- ✅ 端到端测试通过（test.m4a，DIRECTED 100% 显示正常）

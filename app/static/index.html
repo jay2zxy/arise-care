@@ -2,103 +2,357 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Arise Care — Therapist Utterance Classifier</title>
+  <title>Arise Care</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; justify-content: center; padding: 40px 20px; }
-    .container { max-width: 640px; width: 100%; }
-    h1 { font-size: 1.5rem; margin-bottom: 8px; }
-    p.desc { color: #94a3b8; margin-bottom: 24px; font-size: 0.9rem; }
-    textarea { width: 100%; height: 100px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e2e8f0; font-size: 1rem; resize: vertical; }
-    textarea:focus { outline: none; border-color: #60a5fa; }
-    button { margin-top: 12px; padding: 10px 24px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
-    button:hover { background: #2563eb; }
-    button:disabled { background: #475569; cursor: not-allowed; }
-    .result { margin-top: 24px; padding: 16px; background: #1e293b; border-radius: 8px; display: none; }
-    .result .label { font-size: 0.85rem; color: #94a3b8; }
-    .result .value { font-size: 1.8rem; font-weight: 700; margin-top: 4px; }
-    .DIRECTED { color: #f87171; }
-    .GUIDED { color: #facc15; }
-    .NONE { color: #4ade80; }
-    .history { margin-top: 32px; }
-    .history h2 { font-size: 1.1rem; margin-bottom: 12px; }
-    .history-item { padding: 12px; background: #1e293b; border-radius: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-    .history-item .text { flex: 1; font-size: 0.9rem; color: #cbd5e1; margin-right: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .history-item .tag { padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
-    .tag.DIRECTED { background: #451a1a; }
-    .tag.GUIDED { background: #422006; }
-    .tag.NONE { background: #052e16; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 40px 20px; }
+    .container { max-width: 800px; margin: 0 auto; }
+
+    h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 32px; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid #1e293b; }
+    .tab { padding: 8px 20px; font-size: 0.9rem; cursor: pointer; color: #64748b; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s; }
+    .tab.active { color: #e2e8f0; border-bottom-color: #3b82f6; }
+
+    /* Panels */
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* Card */
+    .card { background: #1e293b; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+
+    /* Classify tab */
+    textarea { width: 100%; height: 100px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e2e8f0; font-size: 0.95rem; resize: vertical; }
+    textarea:focus { outline: none; border-color: #3b82f6; }
+
+    /* Buttons */
+    .btn { padding: 9px 22px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; transition: background 0.15s; }
+    .btn:hover { background: #2563eb; }
+    .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+    .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+
+    /* Classification badge */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+    .badge.DIRECTED { background: #450a0a; color: #f87171; }
+    .badge.GUIDED   { background: #422006; color: #fb923c; }
+    .badge.NONE     { background: #052e16; color: #4ade80; }
+    .badge.PATIENT  { background: #1e293b; color: #475569; }
+
+    /* Classify result */
+    .cls-result { margin-top: 16px; }
+    .cls-label { font-size: 0.8rem; color: #64748b; }
+    .cls-value { font-size: 2rem; font-weight: 700; margin-top: 4px; }
+    .cls-value.DIRECTED { color: #f87171; }
+    .cls-value.GUIDED   { color: #fb923c; }
+    .cls-value.NONE     { color: #4ade80; }
+
+    /* History */
+    .history-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #0f172a; gap: 12px; }
+    .history-item:last-child { border-bottom: none; }
+    .history-text { flex: 1; font-size: 0.88rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Audio upload */
+    .upload-area { border: 2px dashed #334155; border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: border-color 0.15s; }
+    .upload-area:hover, .upload-area.drag { border-color: #3b82f6; }
+    .upload-area input { display: none; }
+    .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+    .upload-hint { color: #64748b; font-size: 0.88rem; margin-top: 4px; }
+    .upload-name { margin-top: 8px; color: #3b82f6; font-size: 0.88rem; }
+
+    /* Stats bar */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+    .stat-card { background: #0f172a; border-radius: 8px; padding: 14px; text-align: center; }
+    .stat-pct { font-size: 1.6rem; font-weight: 700; }
+    .stat-label { font-size: 0.78rem; color: #64748b; margin-top: 2px; }
+    .stat-count { font-size: 0.8rem; color: #475569; margin-top: 2px; }
+    .stat-card.d .stat-pct { color: #f87171; }
+    .stat-card.g .stat-pct { color: #fb923c; }
+    .stat-card.n .stat-pct { color: #4ade80; }
+
+    .progress-bar { height: 8px; border-radius: 4px; background: #0f172a; display: flex; overflow: hidden; margin-bottom: 16px; }
+    .progress-bar .seg-d { background: #f87171; }
+    .progress-bar .seg-g { background: #fb923c; }
+    .progress-bar .seg-n { background: #4ade80; }
+
+    /* Duration row */
+    .duration-row { display: flex; justify-content: space-between; font-size: 0.88rem; color: #94a3b8; margin-bottom: 6px; }
+    .duration-bar { height: 6px; border-radius: 3px; background: #3b82f6; margin-top: 3px; }
+
+    /* Segment list */
+    .segment { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #0f172a; align-items: flex-start; }
+    .segment:last-child { border-bottom: none; }
+    .seg-time { font-size: 0.78rem; color: #475569; white-space: nowrap; min-width: 72px; padding-top: 2px; }
+    .seg-speaker { font-size: 0.78rem; white-space: nowrap; min-width: 80px; padding-top: 2px; }
+    .seg-text { flex: 1; font-size: 0.88rem; color: #cbd5e1; line-height: 1.5; }
+    .seg-badge { min-width: 72px; text-align: right; padding-top: 2px; }
+    .therapist-row .seg-text { color: #e2e8f0; }
+
+    .section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: #475569; margin-bottom: 12px; }
+
+    .meta-row { display: flex; gap: 16px; font-size: 0.82rem; color: #64748b; margin-bottom: 16px; flex-wrap: wrap; }
+    .meta-row span { display: flex; align-items: center; gap: 4px; }
+
+    .hidden { display: none; }
+    .mt12 { margin-top: 12px; }
+    .mt16 { margin-top: 16px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Arise Care</h1>
-    <p class="desc">Enter a therapist utterance to classify as DIRECTED, GUIDED, or NONE.</p>
-    <textarea id="input" placeholder="e.g. Now I want you to raise your left arm slowly..."></textarea>
-    <button id="btn" onclick="classify()">Classify</button>
-    <div class="result" id="result">
-      <div class="label">Classification</div>
-      <div class="value" id="classification"></div>
+<div class="container">
+  <h1>Arise Care</h1>
+  <p class="subtitle">Rehabilitation fidelity assessment — automated utterance classification</p>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('classify')">Text Classify</div>
+    <div class="tab" onclick="switchTab('analyze')">Session Analysis</div>
+  </div>
+
+  <!-- Tab: Text Classify -->
+  <div class="panel active" id="panel-classify">
+    <div class="card">
+      <textarea id="classifyInput" placeholder="Enter a therapist utterance…"></textarea>
+      <div class="mt12">
+        <button class="btn" id="classifyBtn" onclick="runClassify()">Classify</button>
+      </div>
+      <div class="cls-result hidden" id="classifyResult">
+        <div class="cls-label">Classification</div>
+        <div class="cls-value" id="classifyValue"></div>
+      </div>
     </div>
-    <div class="history" id="historySection" style="display:none">
-      <h2>History</h2>
+
+    <div class="card hidden" id="classifyHistory">
+      <div class="section-title">History</div>
       <div id="historyList"></div>
     </div>
   </div>
-  <script>
-    const history = [];
 
-    async function classify() {
-      const input = document.getElementById("input");
-      const btn = document.getElementById("btn");
-      const text = input.value.trim();
-      if (!text) return;
+  <!-- Tab: Session Analysis -->
+  <div class="panel" id="panel-analyze">
+    <div class="card">
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('audioFile').click()">
+        <input type="file" id="audioFile" accept="audio/*" onchange="onFileSelect(this)">
+        <div class="upload-icon">🎙</div>
+        <div>Drop audio file or click to browse</div>
+        <div class="upload-hint">Supports .m4a, .mp3, .wav, .ogg, .flac</div>
+        <div class="upload-name hidden" id="uploadName"></div>
+      </div>
+      <div class="mt12" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button class="btn" id="analyzeBtn" onclick="runAnalyze()" disabled>Analyze</button>
+        <input id="therapistInput" placeholder="Therapist speaker (optional, e.g. SPEAKER_00)"
+          style="flex:1; min-width:200px; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px 12px; color:#e2e8f0; font-size:0.88rem;">
+      </div>
+    </div>
 
-      btn.disabled = true;
-      btn.textContent = "Classifying...";
+    <div class="hidden" id="reportSection">
+      <!-- Stats -->
+      <div class="card">
+        <div class="section-title">Classification Summary</div>
+        <div class="meta-row" id="metaRow"></div>
+        <div class="stats-grid">
+          <div class="stat-card d">
+            <div class="stat-pct" id="pctD">—</div>
+            <div class="stat-label">DIRECTED</div>
+            <div class="stat-count" id="cntD"></div>
+          </div>
+          <div class="stat-card g">
+            <div class="stat-pct" id="pctG">—</div>
+            <div class="stat-label">GUIDED</div>
+            <div class="stat-count" id="cntG"></div>
+          </div>
+          <div class="stat-card n">
+            <div class="stat-pct" id="pctN">—</div>
+            <div class="stat-label">NONE</div>
+            <div class="stat-count" id="cntN"></div>
+          </div>
+        </div>
+        <div class="progress-bar" id="progressBar"></div>
 
-      try {
-        const res = await fetch("/api/classify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
-        const data = await res.json();
-        const cls = data.classification || "ERROR";
-        const clean = cls.match(/DIRECTED|GUIDED|NONE/)?.[0] || cls;
+        <!-- Speaker durations -->
+        <div class="section-title mt16">Speaker Durations</div>
+        <div id="durationList"></div>
+      </div>
 
-        document.getElementById("result").style.display = "block";
-        const el = document.getElementById("classification");
-        el.textContent = clean;
-        el.className = "value " + clean;
+      <!-- Segment list -->
+      <div class="card">
+        <div class="section-title">Transcript</div>
+        <div id="segmentList"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
-        history.unshift({ text, cls: clean });
-        renderHistory();
-        input.value = "";
-      } catch (e) {
-        alert("Error: " + e.message);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Classify";
-      }
-    }
+<script>
+  // ── Tabs ──────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['classify','analyze'][i] === name));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+  }
 
-    function renderHistory() {
-      const section = document.getElementById("historySection");
-      const list = document.getElementById("historyList");
-      if (history.length === 0) { section.style.display = "none"; return; }
-      section.style.display = "block";
-      list.innerHTML = history.map(h =>
-        `<div class="history-item">
-          <div class="text">${h.text.replace(/</g, "&lt;")}</div>
-          <div class="tag ${h.cls}">${h.cls}</div>
-        </div>`
-      ).join("");
-    }
+  // ── Text Classify ─────────────────────────────────────
+  const clsHistory = [];
 
-    document.getElementById("input").addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); classify(); }
-    });
-  </script>
+  async function runClassify() {
+    const input = document.getElementById('classifyInput');
+    const btn = document.getElementById('classifyBtn');
+    const text = input.value.trim();
+    if (!text) return;
+
+    btn.disabled = true; btn.textContent = 'Classifying…';
+    try {
+      const res = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      const cls = (data.classification || '').match(/DIRECTED|GUIDED|NONE/)?.[0] || 'ERROR';
+
+      const el = document.getElementById('classifyValue');
+      el.textContent = cls;
+      el.className = 'cls-value ' + cls;
+      document.getElementById('classifyResult').classList.remove('hidden');
+
+      clsHistory.unshift({ text, cls });
+      renderHistory();
+      input.value = '';
+    } catch (e) { alert('Error: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Classify'; }
+  }
+
+  function renderHistory() {
+    const card = document.getElementById('classifyHistory');
+    const list = document.getElementById('historyList');
+    if (!clsHistory.length) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    list.innerHTML = clsHistory.map(h => `
+      <div class="history-item">
+        <div class="history-text">${esc(h.text)}</div>
+        <span class="badge ${h.cls}">${h.cls}</span>
+      </div>`).join('');
+  }
+
+  document.getElementById('classifyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runClassify(); }
+  });
+
+  // ── Drag & drop ───────────────────────────────────────
+  const uploadArea = document.getElementById('uploadArea');
+  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag'); });
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag'));
+  uploadArea.addEventListener('drop', e => {
+    e.preventDefault(); uploadArea.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+
+  let selectedFile = null;
+  function onFileSelect(input) { if (input.files[0]) setFile(input.files[0]); }
+  function setFile(f) {
+    selectedFile = f;
+    const nameEl = document.getElementById('uploadName');
+    nameEl.textContent = f.name;
+    nameEl.classList.remove('hidden');
+    document.getElementById('analyzeBtn').disabled = false;
+  }
+
+  // ── Analyze ───────────────────────────────────────────
+  async function runAnalyze() {
+    if (!selectedFile) return;
+    const btn = document.getElementById('analyzeBtn');
+    const therapist = document.getElementById('therapistInput').value.trim();
+
+    btn.disabled = true; btn.textContent = 'Analyzing… (this may take a while)';
+    document.getElementById('reportSection').classList.add('hidden');
+
+    try {
+      const form = new FormData();
+      form.append('file', selectedFile);
+      let url = '/api/analyze';
+      if (therapist) url += '?therapist_speaker=' + encodeURIComponent(therapist);
+
+      const res = await fetch(url, { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.error) { alert('Error: ' + data.error); return; }
+      renderReport(data);
+    } catch (e) { alert('Error: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Analyze'; }
+  }
+
+  function renderReport(data) {
+    const { segments, stats } = data;
+    const { therapist_speaker, total_therapist_utterances, directed, guided, none, speaker_durations } = stats;
+
+    // meta
+    document.getElementById('metaRow').innerHTML =
+      `<span>Therapist: <strong>${therapist_speaker}</strong></span>` +
+      `<span>Utterances: <strong>${total_therapist_utterances}</strong></span>`;
+
+    // stat cards
+    document.getElementById('pctD').textContent = directed.percentage + '%';
+    document.getElementById('cntD').textContent = directed.count + ' utterances';
+    document.getElementById('pctG').textContent = guided.percentage + '%';
+    document.getElementById('cntG').textContent = guided.count + ' utterances';
+    document.getElementById('pctN').textContent = none.percentage + '%';
+    document.getElementById('cntN').textContent = none.count + ' utterances';
+
+    // progress bar
+    document.getElementById('progressBar').innerHTML =
+      `<div class="seg-d" style="width:${directed.percentage}%"></div>` +
+      `<div class="seg-g" style="width:${guided.percentage}%"></div>` +
+      `<div class="seg-n" style="width:${none.percentage}%"></div>`;
+
+    // durations
+    const totalDur = Object.values(speaker_durations).reduce((a, b) => a + b, 0);
+    document.getElementById('durationList').innerHTML =
+      Object.entries(speaker_durations).sort((a, b) => b[1] - a[1]).map(([spk, dur]) => {
+        const pct = totalDur > 0 ? Math.round(dur / totalDur * 100) : 0;
+        const isTherapist = spk === therapist_speaker;
+        return `<div class="duration-row">
+          <span>${spk}${isTherapist ? ' (therapist)' : ''}</span>
+          <span>${dur.toFixed(1)}s · ${pct}%</span>
+        </div>
+        <div class="duration-bar" style="width:${pct}%; margin-bottom:10px; ${isTherapist ? '' : 'background:#334155;'}"></div>`;
+      }).join('');
+
+    // segments
+    document.getElementById('segmentList').innerHTML = segments.map(seg => {
+      const isTherapist = seg.speaker === therapist_speaker;
+      const cls = seg.classification;
+      const speakerLabel = seg.speaker || 'UNKNOWN';
+      const badgeHtml = cls
+        ? `<span class="badge ${cls}">${cls}</span>`
+        : `<span class="badge PATIENT">${isTherapist ? '' : 'patient'}</span>`;
+      return `<div class="segment ${isTherapist ? 'therapist-row' : ''}">
+        <div class="seg-time">${fmt(seg.start)} – ${fmt(seg.end)}</div>
+        <div class="seg-speaker" style="color:${speakerColor(speakerLabel)}">${speakerLabel}</div>
+        <div class="seg-text">${esc(seg.text)}</div>
+        <div class="seg-badge">${badgeHtml}</div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('reportSection').classList.remove('hidden');
+  }
+
+  // ── Helpers ───────────────────────────────────────────
+  const COLORS = ['#60a5fa', '#a78bfa', '#34d399', '#f472b6', '#facc15'];
+  const colorMap = {};
+  let colorIdx = 0;
+  function speakerColor(spk) {
+    if (!colorMap[spk]) colorMap[spk] = COLORS[colorIdx++ % COLORS.length];
+    return colorMap[spk];
+  }
+
+  function fmt(s) {
+    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
 </body>
 </html>
