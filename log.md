@@ -98,3 +98,20 @@
 **技术决策**：
 - HF Token 仅用于首次下载模型，打包分发时可内嵌模型文件（~20MB）绕过 token
 - 用 PyAV 读音频而非系统 FFmpeg，减少外部依赖
+
+### 2026-04-09 - Session 5: Phase 3 完整 Pipeline
+
+**完成内容**：
+- ✅ `app/services/pipeline.py`：编排全流程（转录 → 说话人分离 → 分类 → 统计）
+- ✅ `app/routers/pipeline.py`：`POST /api/analyze` 端点
+- ✅ `app/main.py`：注册 pipeline 路由
+- ✅ 端到端测试通过（test.m4a → DIRECTED 分类正确，统计报告输出正常）
+
+**Pipeline 流程**：
+1. 音频上传 → faster-whisper 转录 + pyannote 说话人分离
+2. 自动识别治疗师（发言最多的说话人），支持 `?therapist_speaker=` 手动覆盖
+3. 对治疗师每句话调 Ollama 分类（DIRECTED/GUIDED/NONE）
+4. 统计各类别数量、百分比、说话时长，返回完整报告 JSON
+
+**待完成**：
+- ⬜ Phase 4：前端可视化报告（饼图 + 逐句时间轴 + 导出）

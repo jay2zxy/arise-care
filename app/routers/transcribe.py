@@ -8,7 +8,7 @@ from app.services.asr import transcribe, transcribe_with_diarization
 router = APIRouter()
 
 
-@router.post("/api/transcribe", response_model=TranscribeResponse)
+@router.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe_audio(
     file: UploadFile = File(...),
     diarize: bool = Query(False, description="Enable speaker diarization"),
