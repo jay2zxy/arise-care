@@ -5,194 +5,530 @@
   <title>Arise Care</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 40px 20px; }
-    .container { max-width: 800px; margin: 0 auto; }
+    body { font-family: 'Google Sans', system-ui, -apple-system, sans-serif; background: #1e1e1e; color: #e3e3e3; height: 100vh; display: flex; overflow: hidden; }
 
-    h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
-    .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 32px; }
+    /* ── Left Sidebar ──────────────────────────────── */
+    .sidebar-left {
+      width: 230px; min-width: 230px; background: #1a1a1a; display: flex; flex-direction: column;
+      border-right: 1px solid #333; padding: 0; overflow-y: auto;
+    }
+    .sidebar-left::-webkit-scrollbar { width: 4px; }
+    .sidebar-left::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
 
-    /* Tabs */
-    .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid #1e293b; }
-    .tab { padding: 8px 20px; font-size: 0.9rem; cursor: pointer; color: #64748b; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s; }
-    .tab.active { color: #e2e8f0; border-bottom-color: #3b82f6; }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 16px 20px; font-size: 1rem; font-weight: 500; color: #e3e3e3; border-bottom: 1px solid #2a2a2a; }
+    .brand-icon { width: 28px; height: 28px; background: #3b82f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: #fff; font-weight: 700; }
 
-    /* Panels */
-    .panel { display: none; }
-    .panel.active { display: block; }
+    .nav-section { padding: 12px 8px; flex: 1; }
+    .nav-label { padding: 8px 14px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; margin-top: 8px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px;
+      cursor: pointer; font-size: 0.88rem; color: #aaa; transition: all 0.15s; margin-bottom: 2px;
+    }
+    .nav-item:hover { background: #2a2a2a; color: #e3e3e3; }
+    .nav-item.active { background: #2d3748; color: #fff; }
+    .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 
-    /* Card */
-    .card { background: #1e293b; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .nav-history { padding: 0 8px; }
+    .nav-history-item {
+      padding: 7px 14px; font-size: 0.8rem; color: #777; cursor: pointer; border-radius: 6px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: all 0.15s;
+    }
+    .nav-history-item:hover { background: #2a2a2a; color: #bbb; }
 
-    /* Classify tab */
-    textarea { width: 100%; height: 100px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e2e8f0; font-size: 0.95rem; resize: vertical; }
-    textarea:focus { outline: none; border-color: #3b82f6; }
+    .sidebar-bottom { padding: 12px 8px; border-top: 1px solid #2a2a2a; }
+    .sidebar-bottom .nav-item { font-size: 0.82rem; }
 
-    /* Buttons */
-    .btn { padding: 9px 22px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; transition: background 0.15s; }
+    /* ── Main Content ──────────────────────────────── */
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 24px; border-bottom: 1px solid #333; min-height: 48px;
+    }
+    .topbar-title { font-size: 0.95rem; font-weight: 500; color: #ccc; }
+    .topbar-actions { display: flex; gap: 8px; }
+
+    .content-area { flex: 1; overflow-y: auto; padding: 32px; }
+    .content-area::-webkit-scrollbar { width: 6px; }
+    .content-area::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+    .page-title { font-size: 1.8rem; font-weight: 400; color: #999; margin-bottom: 28px; }
+
+    /* Cards grid (like AI Studio feature cards) */
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .feature-card {
+      background: #252525; border: 1px solid #333; border-radius: 12px; padding: 20px;
+      cursor: default; transition: border-color 0.15s;
+    }
+    .feature-card:hover { border-color: #555; }
+    .feature-card-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; font-size: 0.9rem; }
+    .feature-card-title { font-size: 0.95rem; font-weight: 500; margin-bottom: 6px; color: #e3e3e3; }
+    .feature-card-desc { font-size: 0.82rem; color: #888; line-height: 1.5; }
+
+    /* ── Bottom Input Bar ──────────────────────────── */
+    .bottom-bar {
+      padding: 16px 32px 20px; border-top: 1px solid #333;
+    }
+    .input-bar {
+      background: #2a2a2a; border: 1px solid #444; border-radius: 12px; padding: 14px 18px;
+      display: flex; align-items: flex-end; gap: 10px;
+    }
+    .input-bar textarea {
+      flex: 1; background: transparent; border: none; color: #e3e3e3; font-size: 0.95rem;
+      resize: none; outline: none; min-height: 24px; max-height: 120px; line-height: 1.5;
+      font-family: inherit;
+    }
+    .input-bar textarea::placeholder { color: #666; }
+    .input-bar-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .icon-btn {
+      width: 34px; height: 34px; border-radius: 8px; border: none; background: transparent;
+      color: #888; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .icon-btn:hover { background: #363636; color: #ccc; }
+    .icon-btn.primary { background: #3b82f6; color: #fff; }
+    .icon-btn.primary:hover { background: #2563eb; }
+    .icon-btn.primary:disabled { background: #333; color: #555; cursor: not-allowed; }
+    .icon-btn svg { width: 18px; height: 18px; }
+
+    /* ── Upload Area ───────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed #444; border-radius: 12px; padding: 48px 32px; text-align: center;
+      cursor: pointer; transition: all 0.2s; margin-bottom: 24px;
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color: #3b82f6; background: rgba(59,130,246,0.04); }
+    .upload-zone input { display: none; }
+    .upload-zone-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.5; }
+    .upload-zone-text { color: #888; font-size: 0.95rem; }
+    .upload-zone-hint { color: #555; font-size: 0.82rem; margin-top: 6px; }
+    .upload-zone-name { color: #3b82f6; font-size: 0.88rem; margin-top: 10px; }
+    .upload-actions { display: flex; gap: 10px; align-items: center; margin-bottom: 24px; }
+
+    /* ── Right Sidebar ─────────────────────────────── */
+    .sidebar-right {
+      width: 280px; min-width: 280px; background: #1a1a1a; border-left: 1px solid #333;
+      overflow-y: auto; display: flex; flex-direction: column;
+    }
+    .sidebar-right::-webkit-scrollbar { width: 4px; }
+    .sidebar-right::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+
+    .panel-section { padding: 16px 20px; border-bottom: 1px solid #2a2a2a; }
+    .panel-title { font-size: 0.95rem; font-weight: 500; margin-bottom: 4px; color: #e3e3e3; }
+    .panel-subtitle { font-size: 0.78rem; color: #666; line-height: 1.5; }
+    .panel-label { font-size: 0.82rem; color: #999; margin-bottom: 6px; margin-top: 14px; }
+    .panel-label:first-child { margin-top: 0; }
+    .panel-value { font-size: 0.88rem; color: #e3e3e3; }
+
+    .panel-input {
+      width: 100%; background: #252525; border: 1px solid #444; border-radius: 8px;
+      padding: 8px 12px; color: #e3e3e3; font-size: 0.85rem; outline: none;
+    }
+    .panel-input:focus { border-color: #3b82f6; }
+
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .status-dot.online { background: #4ade80; }
+    .status-dot.offline { background: #f87171; }
+
+    /* ── Stats (Right Sidebar) ─────────────────────── */
+    .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+    .stat-row-label { font-size: 0.82rem; color: #999; display: flex; align-items: center; gap: 6px; }
+    .stat-row-value { font-size: 0.95rem; font-weight: 600; }
+    .stat-dot { width: 8px; height: 8px; border-radius: 2px; }
+    .stat-dot.d { background: #f87171; }
+    .stat-dot.g { background: #fb923c; }
+    .stat-dot.n { background: #4ade80; }
+    .stat-row-value.d { color: #f87171; }
+    .stat-row-value.g { color: #fb923c; }
+    .stat-row-value.n { color: #4ade80; }
+
+    .mini-bar { height: 6px; border-radius: 3px; background: #333; display: flex; overflow: hidden; margin-top: 12px; }
+    .mini-bar .seg-d { background: #f87171; }
+    .mini-bar .seg-g { background: #fb923c; }
+    .mini-bar .seg-n { background: #4ade80; }
+
+    /* ── Buttons ───────────────────────────────────── */
+    .btn { padding: 9px 22px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-size: 0.88rem; cursor: pointer; transition: background 0.15s; font-family: inherit; }
     .btn:hover { background: #2563eb; }
-    .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
-    .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+    .btn:disabled { background: #333; color: #555; cursor: not-allowed; }
+    .btn-sm { padding: 6px 14px; font-size: 0.82rem; }
+    .btn-ghost { background: transparent; border: 1px solid #444; color: #aaa; }
+    .btn-ghost:hover { background: #2a2a2a; border-color: #555; color: #e3e3e3; }
 
-    /* Classification badge */
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+    /* ── Classification badge ──────────────────────── */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
     .badge.DIRECTED { background: #450a0a; color: #f87171; }
     .badge.GUIDED   { background: #422006; color: #fb923c; }
     .badge.NONE     { background: #052e16; color: #4ade80; }
-    .badge.PATIENT  { background: #1e293b; color: #475569; }
+    .badge.PATIENT  { background: #2a2a2a; color: #555; }
 
-    /* Classify result */
-    .cls-result { margin-top: 16px; }
-    .cls-label { font-size: 0.8rem; color: #64748b; }
-    .cls-value { font-size: 2rem; font-weight: 700; margin-top: 4px; }
-    .cls-value.DIRECTED { color: #f87171; }
-    .cls-value.GUIDED   { color: #fb923c; }
-    .cls-value.NONE     { color: #4ade80; }
+    /* ── Classify result ───────────────────────────── */
+    .cls-result { text-align: center; padding: 32px; }
+    .cls-result-label { font-size: 0.82rem; color: #666; margin-bottom: 8px; }
+    .cls-result-value { font-size: 3rem; font-weight: 700; }
+    .cls-result-value.DIRECTED { color: #f87171; }
+    .cls-result-value.GUIDED   { color: #fb923c; }
+    .cls-result-value.NONE     { color: #4ade80; }
 
-    /* History */
-    .history-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #0f172a; gap: 12px; }
-    .history-item:last-child { border-bottom: none; }
-    .history-text { flex: 1; font-size: 0.88rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* ── Classify history ──────────────────────────── */
+    .cls-history-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #2a2a2a; gap: 12px; }
+    .cls-history-item:last-child { border-bottom: none; }
+    .cls-history-text { flex: 1; font-size: 0.85rem; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    /* Audio upload */
-    .upload-area { border: 2px dashed #334155; border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: border-color 0.15s; }
-    .upload-area:hover, .upload-area.drag { border-color: #3b82f6; }
-    .upload-area input { display: none; }
-    .upload-icon { font-size: 2rem; margin-bottom: 8px; }
-    .upload-hint { color: #64748b; font-size: 0.88rem; margin-top: 4px; }
-    .upload-name { margin-top: 8px; color: #3b82f6; font-size: 0.88rem; }
-
-    /* Stats bar */
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-    .stat-card { background: #0f172a; border-radius: 8px; padding: 14px; text-align: center; }
-    .stat-pct { font-size: 1.6rem; font-weight: 700; }
-    .stat-label { font-size: 0.78rem; color: #64748b; margin-top: 2px; }
-    .stat-count { font-size: 0.8rem; color: #475569; margin-top: 2px; }
-    .stat-card.d .stat-pct { color: #f87171; }
-    .stat-card.g .stat-pct { color: #fb923c; }
-    .stat-card.n .stat-pct { color: #4ade80; }
-
-    .progress-bar { height: 8px; border-radius: 4px; background: #0f172a; display: flex; overflow: hidden; margin-bottom: 16px; }
-    .progress-bar .seg-d { background: #f87171; }
-    .progress-bar .seg-g { background: #fb923c; }
-    .progress-bar .seg-n { background: #4ade80; }
-
-    /* Duration row */
-    .duration-row { display: flex; justify-content: space-between; font-size: 0.88rem; color: #94a3b8; margin-bottom: 6px; }
-    .duration-bar { height: 6px; border-radius: 3px; background: #3b82f6; margin-top: 3px; }
-
-    /* Segment list */
-    .segment { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #0f172a; align-items: flex-start; }
+    /* ── Report segments ───────────────────────────── */
+    .segment { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #2a2a2a; align-items: flex-start; }
     .segment:last-child { border-bottom: none; }
-    .seg-time { font-size: 0.78rem; color: #475569; white-space: nowrap; min-width: 72px; padding-top: 2px; }
-    .seg-speaker { font-size: 0.78rem; white-space: nowrap; min-width: 80px; padding-top: 2px; }
-    .seg-text { flex: 1; font-size: 0.88rem; color: #cbd5e1; line-height: 1.5; }
-    .seg-badge { min-width: 72px; text-align: right; padding-top: 2px; }
-    .therapist-row .seg-text { color: #e2e8f0; }
+    .seg-time { font-size: 0.75rem; color: #555; white-space: nowrap; min-width: 72px; padding-top: 2px; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+    .seg-speaker { font-size: 0.75rem; white-space: nowrap; min-width: 90px; padding-top: 2px; font-weight: 500; }
+    .seg-text { flex: 1; font-size: 0.88rem; color: #bbb; line-height: 1.6; }
+    .seg-badge { min-width: 76px; text-align: right; padding-top: 2px; }
+    .therapist-row .seg-text { color: #e3e3e3; }
 
-    .section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: #475569; margin-bottom: 12px; }
+    /* ── Duration bars ─────────────────────────────── */
+    .dur-item { margin-bottom: 10px; }
+    .dur-header { display: flex; justify-content: space-between; font-size: 0.82rem; color: #999; margin-bottom: 4px; }
+    .dur-bar { height: 4px; border-radius: 2px; background: #333; }
+    .dur-bar-fill { height: 100%; border-radius: 2px; background: #3b82f6; }
+    .dur-bar-fill.secondary { background: #444; }
 
-    .meta-row { display: flex; gap: 16px; font-size: 0.82rem; color: #64748b; margin-bottom: 16px; flex-wrap: wrap; }
-    .meta-row span { display: flex; align-items: center; gap: 4px; }
+    /* ── Section headers ───────────────────────────── */
+    .section-header { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #555; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
 
-    .hidden { display: none; }
-    .mt12 { margin-top: 12px; }
-    .mt16 { margin-top: 16px; }
+    /* ── Session history (main area) ───────────────── */
+    .session-card {
+      background: #252525; border: 1px solid #333; border-radius: 10px; padding: 16px 20px;
+      margin-bottom: 10px; cursor: pointer; transition: all 0.15s; display: flex;
+      justify-content: space-between; align-items: center; gap: 16px;
+    }
+    .session-card:hover { border-color: #555; background: #2a2a2a; }
+    .session-name { font-size: 0.9rem; font-weight: 500; color: #e3e3e3; }
+    .session-meta { font-size: 0.78rem; color: #666; margin-top: 3px; }
+    .session-badges { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+    .session-del { background: transparent; border: none; color: #555; cursor: pointer; padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; }
+    .session-del:hover { color: #f87171; background: #2a2a2a; }
+
+    .empty-state { text-align: center; padding: 60px 0; color: #555; font-size: 0.95rem; }
+
+    /* ── Progress feedback ─────────────────────────── */
+    .progress-status { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: #888; margin-top: 12px; }
+    .spinner { width: 16px; height: 16px; border: 2px solid #444; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ─────────────────────────────────────── */
+    .toast-container { position: fixed; top: 16px; right: 16px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 18px; border-radius: 8px; font-size: 0.85rem; animation: toastIn 0.25s ease-out; max-width: 340px; }
+    .toast.error { background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; }
+    .toast.success { background: #14532d; border: 1px solid #166534; color: #86efac; }
+    .toast.fade-out { animation: toastOut 0.3s ease-in forwards; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
+
+    /* ── Export row ─────────────────────────────────── */
+    .export-row { display: flex; gap: 8px; margin-top: 16px; }
+
+    .hidden { display: none !important; }
+
+    /* ── Mobile menu buttons ───────────────────────── */
+    .menu-btn {
+      width: 40px; height: 40px; border-radius: 10px; border: none; background: #2a2a2a;
+      color: #aaa; cursor: pointer; display: none; align-items: center; justify-content: center;
+      transition: all 0.15s; flex-shrink: 0;
+    }
+    .menu-btn:hover { background: #363636; color: #e3e3e3; }
+    .menu-btn svg { width: 20px; height: 20px; }
+
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+
+    /* ── Overlay backdrop ──────────────────────────── */
+    .overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 90;
+    }
+    .overlay.show { display: block; }
+
+    /* ── Responsive ─────────────────────────────────── */
+    @media (max-width: 900px) {
+      .sidebar-right {
+        position: fixed; right: 0; top: 0; bottom: 0; z-index: 100;
+        transform: translateX(100%); transition: transform 0.25s ease;
+      }
+      .sidebar-right.open { transform: translateX(0); }
+      .menu-btn.settings-btn { display: flex; }
+    }
+    @media (max-width: 700px) {
+      .sidebar-left {
+        position: fixed; left: 0; top: 0; bottom: 0; z-index: 100;
+        transform: translateX(-100%); transition: transform 0.25s ease;
+      }
+      .sidebar-left.open { transform: translateX(0); }
+      .menu-btn.hamburger-btn { display: flex; }
+      .segment { flex-wrap: wrap; gap: 4px; }
+      .seg-time, .seg-speaker { min-width: auto; }
+      .cards-grid { grid-template-columns: 1fr 1fr; }
+      .content-area { padding: 24px 16px; }
+      .bottom-bar { padding: 12px 16px 16px; }
+    }
+    @media (max-width: 440px) {
+      .cards-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-<div class="container">
-  <h1>Arise Care</h1>
-  <p class="subtitle">Rehabilitation fidelity assessment — automated utterance classification</p>
 
-  <div class="tabs">
-    <div class="tab active" onclick="switchTab('classify')">Text Classify</div>
-    <div class="tab" onclick="switchTab('analyze')">Session Analysis</div>
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ═══ Left Sidebar ═══ -->
+<div class="sidebar-left">
+  <div class="brand">
+    <div class="brand-icon">A</div>
+    <span>Arise Care</span>
   </div>
 
-  <!-- Tab: Text Classify -->
-  <div class="panel active" id="panel-classify">
-    <div class="card">
-      <textarea id="classifyInput" placeholder="Enter a therapist utterance…"></textarea>
-      <div class="mt12">
-        <button class="btn" id="classifyBtn" onclick="runClassify()">Classify</button>
+  <div class="nav-section">
+    <div class="nav-item active" data-page="classify" onclick="switchPage('classify')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h8"/></svg>
+      Text Classify
+    </div>
+    <div class="nav-item" data-page="analyze" onclick="switchPage('analyze')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Session Analysis
+    </div>
+    <div class="nav-item" data-page="history" onclick="switchPage('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+      History
+    </div>
+
+    <div class="nav-label">Recent Sessions</div>
+    <div id="navHistoryList">
+      <div class="nav-history-item" style="color:#555; font-style:italic;">No sessions yet</div>
+    </div>
+  </div>
+
+  <div class="sidebar-bottom">
+    <div class="nav-item" onclick="checkModelStatus()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m-7.07-3.93l4.24-4.24m5.66-5.66l4.24-4.24M1 12h6m6 0h6m-3.93 7.07l-4.24-4.24m-5.66-5.66L4.93 4.93"/></svg>
+      <span id="modelStatusText"><span class="status-dot online"></span>qwen-bala</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Overlay ═══ -->
+<div class="overlay" id="overlay" onclick="closeSidebars()"></div>
+
+<!-- ═══ Main Content ═══ -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <button class="menu-btn hamburger-btn" onclick="toggleLeft()" title="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <div class="topbar-title" id="topbarTitle">Text Classify</div>
+    </div>
+    <div class="topbar-actions" id="topbarActions">
+      <button class="menu-btn settings-btn" onclick="toggleRight()" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h12M15 3v4M21 12H9M9 10v4M3 19h12M15 17v4"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Page: Classify -->
+  <div class="content-area" id="page-classify">
+    <div class="page-title">Classify therapist utterances</div>
+
+    <div class="cards-grid">
+      <div class="feature-card" onclick="quickClassify('Please raise your left arm slowly.')">
+        <div class="feature-card-icon" style="background:#450a0a; color:#f87171;">D</div>
+        <div class="feature-card-title">Directed</div>
+        <div class="feature-card-desc">Explicit instructions telling the patient exactly what to do.</div>
       </div>
-      <div class="cls-result hidden" id="classifyResult">
-        <div class="cls-label">Classification</div>
-        <div class="cls-value" id="classifyValue"></div>
+      <div class="feature-card" onclick="quickClassify('What do you think you should do next?')">
+        <div class="feature-card-icon" style="background:#422006; color:#fb923c;">G</div>
+        <div class="feature-card-title">Guided</div>
+        <div class="feature-card-desc">Questions or hints encouraging the patient to think and decide.</div>
+      </div>
+      <div class="feature-card" onclick="quickClassify('Your session went really well today.')">
+        <div class="feature-card-icon" style="background:#052e16; color:#4ade80;">N</div>
+        <div class="feature-card-title">None</div>
+        <div class="feature-card-desc">General chat, observations, or explanations — no guidance.</div>
       </div>
     </div>
 
-    <div class="card hidden" id="classifyHistory">
-      <div class="section-title">History</div>
+    <div id="classifyResultArea" class="hidden">
+      <div class="cls-result">
+        <div class="cls-result-label">Classification Result</div>
+        <div class="cls-result-value" id="classifyValue"></div>
+      </div>
+    </div>
+
+    <div id="classifyHistorySection" class="hidden" style="margin-top:24px;">
+      <div class="section-header">History</div>
       <div id="historyList"></div>
     </div>
   </div>
 
-  <!-- Tab: Session Analysis -->
-  <div class="panel" id="panel-analyze">
-    <div class="card">
-      <div class="upload-area" id="uploadArea" onclick="document.getElementById('audioFile').click()">
-        <input type="file" id="audioFile" accept="audio/*" onchange="onFileSelect(this)">
-        <div class="upload-icon">🎙</div>
-        <div>Drop audio file or click to browse</div>
-        <div class="upload-hint">Supports .m4a, .mp3, .wav, .ogg, .flac</div>
-        <div class="upload-name hidden" id="uploadName"></div>
-      </div>
-      <div class="mt12" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-        <button class="btn" id="analyzeBtn" onclick="runAnalyze()" disabled>Analyze</button>
-        <input id="therapistInput" placeholder="Therapist speaker (optional, e.g. SPEAKER_00)"
-          style="flex:1; min-width:200px; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px 12px; color:#e2e8f0; font-size:0.88rem;">
+  <!-- Page: Analyze -->
+  <div class="content-area hidden" id="page-analyze">
+    <div class="page-title">Analyze a session</div>
+
+    <div class="upload-zone" id="uploadArea" onclick="document.getElementById('audioFile').click()">
+      <input type="file" id="audioFile" accept="audio/*" onchange="onFileSelect(this)">
+      <div class="upload-zone-icon">🎙</div>
+      <div class="upload-zone-text">Drop an audio file or click to browse</div>
+      <div class="upload-zone-hint">Supports .m4a, .mp3, .wav, .ogg, .flac</div>
+      <div class="upload-zone-name hidden" id="uploadName"></div>
+    </div>
+
+    <div class="upload-actions">
+      <button class="btn" id="analyzeBtn" onclick="runAnalyze()" disabled>Analyze</button>
+      <div class="progress-status hidden" id="progressStatus">
+        <div class="spinner"></div>
+        <span id="progressText">Processing…</span>
       </div>
     </div>
 
     <div class="hidden" id="reportSection">
-      <!-- Stats -->
-      <div class="card">
-        <div class="section-title">Classification Summary</div>
-        <div class="meta-row" id="metaRow"></div>
-        <div class="stats-grid">
-          <div class="stat-card d">
-            <div class="stat-pct" id="pctD">—</div>
-            <div class="stat-label">DIRECTED</div>
-            <div class="stat-count" id="cntD"></div>
-          </div>
-          <div class="stat-card g">
-            <div class="stat-pct" id="pctG">—</div>
-            <div class="stat-label">GUIDED</div>
-            <div class="stat-count" id="cntG"></div>
-          </div>
-          <div class="stat-card n">
-            <div class="stat-pct" id="pctN">—</div>
-            <div class="stat-label">NONE</div>
-            <div class="stat-count" id="cntN"></div>
-          </div>
+      <div class="section-header">
+        <span>Transcript</span>
+        <div class="export-row" style="margin:0;">
+          <button class="btn btn-sm btn-ghost" onclick="exportJSON()">JSON</button>
+          <button class="btn btn-sm btn-ghost" onclick="exportCSV()">CSV</button>
         </div>
-        <div class="progress-bar" id="progressBar"></div>
-
-        <!-- Speaker durations -->
-        <div class="section-title mt16">Speaker Durations</div>
-        <div id="durationList"></div>
       </div>
 
-      <!-- Segment list -->
-      <div class="card">
-        <div class="section-title">Transcript</div>
-        <div id="segmentList"></div>
+      <!-- Durations -->
+      <div style="margin-bottom:20px;" id="durationList"></div>
+
+      <!-- Segments -->
+      <div id="segmentList"></div>
+    </div>
+  </div>
+
+  <!-- Page: History -->
+  <div class="content-area hidden" id="page-history">
+    <div class="page-title">Session history</div>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+      <button class="btn btn-sm btn-ghost" onclick="clearAllSessions()">Clear All</button>
+    </div>
+    <div id="sessionList"></div>
+  </div>
+
+  <!-- Bottom Input Bar (classify) -->
+  <div class="bottom-bar" id="bottomBar">
+    <div class="input-bar">
+      <textarea id="classifyInput" rows="1" placeholder="Type a therapist utterance to classify…"
+        oninput="autoGrow(this)"></textarea>
+      <div class="input-bar-actions">
+        <button class="icon-btn primary" id="classifyBtn" onclick="runClassify()" title="Classify">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
       </div>
     </div>
   </div>
 </div>
 
+<!-- ═══ Right Sidebar ═══ -->
+<div class="sidebar-right">
+  <div class="panel-section">
+    <div class="panel-title">qwen-bala</div>
+    <div class="panel-subtitle">Qwen2.5-7B fine-tuned for rehabilitation utterance classification (Q5_K_M quantized)</div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-label">Therapist Speaker</div>
+    <input class="panel-input" id="therapistInput" placeholder="Auto-detect (e.g. SPEAKER_00)">
+    <div class="panel-subtitle" style="margin-top:6px;">Leave empty to auto-detect the most frequent speaker as therapist.</div>
+  </div>
+
+  <div class="panel-section hidden" id="statsPanel">
+    <div class="panel-label">Classification Summary</div>
+    <div id="statsMeta" style="font-size:0.82rem; color:#888; margin-bottom:10px;"></div>
+
+    <div class="stat-row">
+      <div class="stat-row-label"><div class="stat-dot d"></div> Directed</div>
+      <div class="stat-row-value d" id="statD">—</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-row-label"><div class="stat-dot g"></div> Guided</div>
+      <div class="stat-row-value g" id="statG">—</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-row-label"><div class="stat-dot n"></div> None</div>
+      <div class="stat-row-value n" id="statN">—</div>
+    </div>
+
+    <div class="mini-bar" id="miniBar"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-label">Pipeline</div>
+    <div class="panel-subtitle">Audio → faster-whisper (ASR) → pyannote (diarization) → qwen-bala (classify) → report</div>
+  </div>
+</div>
+
 <script>
-  // ── Tabs ──────────────────────────────────────────────
-  function switchTab(name) {
-    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['classify','analyze'][i] === name));
-    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    document.getElementById('panel-' + name).classList.add('active');
+  // ── Sidebar Toggle (mobile) ───────────────────────────
+  function toggleLeft() {
+    const sb = document.querySelector('.sidebar-left');
+    const open = sb.classList.toggle('open');
+    document.getElementById('overlay').classList.toggle('show', open);
+    document.querySelector('.sidebar-right').classList.remove('open');
+  }
+  function toggleRight() {
+    const sb = document.querySelector('.sidebar-right');
+    const open = sb.classList.toggle('open');
+    document.getElementById('overlay').classList.toggle('show', open);
+    document.querySelector('.sidebar-left').classList.remove('open');
+  }
+  function closeSidebars() {
+    document.querySelector('.sidebar-left').classList.remove('open');
+    document.querySelector('.sidebar-right').classList.remove('open');
+    document.getElementById('overlay').classList.remove('show');
   }
 
-  // ── Text Classify ─────────────────────────────────────
-  const clsHistory = [];
+  // ── Page Navigation ──────────────────────────────────
+  function switchPage(name) {
+    document.querySelectorAll('.nav-item[data-page]').forEach(n =>
+      n.classList.toggle('active', n.dataset.page === name));
+    ['classify', 'analyze', 'history'].forEach(p =>
+      document.getElementById('page-' + p).classList.toggle('hidden', p !== name));
+
+    const titles = { classify: 'Text Classify', analyze: 'Session Analysis', history: 'History' };
+    document.getElementById('topbarTitle').textContent = titles[name];
+
+    // show bottom bar only on classify page
+    document.getElementById('bottomBar').classList.toggle('hidden', name !== 'classify');
+
+    if (name === 'history') renderSessionList();
+    closeSidebars();
+  }
+
+  // ── Toast ────────────────────────────────────────────
+  function showToast(message, type = 'error') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      toast.addEventListener('animationend', () => toast.remove());
+    }, 4000);
+  }
+
+  // ── Text Classify ────────────────────────────────────
+  const CLS_STORAGE_KEY = 'arise_classify_history';
+  let clsHistory = [];
+
+  function loadClsHistory() {
+    try { clsHistory = JSON.parse(localStorage.getItem(CLS_STORAGE_KEY)) || []; } catch { clsHistory = []; }
+  }
+  function saveClsHistory() {
+    localStorage.setItem(CLS_STORAGE_KEY, JSON.stringify(clsHistory.slice(0, 50)));
+  }
+
+  function quickClassify(text) {
+    document.getElementById('classifyInput').value = text;
+    autoGrow(document.getElementById('classifyInput'));
+    runClassify();
+  }
 
   async function runClassify() {
     const input = document.getElementById('classifyInput');
@@ -200,7 +536,7 @@
     const text = input.value.trim();
     if (!text) return;
 
-    btn.disabled = true; btn.textContent = 'Classifying…';
+    btn.disabled = true;
     try {
       const res = await fetch('/api/classify', {
         method: 'POST',
@@ -208,28 +544,31 @@
         body: JSON.stringify({ text }),
       });
       const data = await res.json();
+      if (data.error) { showToast(data.error); return; }
       const cls = (data.classification || '').match(/DIRECTED|GUIDED|NONE/)?.[0] || 'ERROR';
 
       const el = document.getElementById('classifyValue');
       el.textContent = cls;
-      el.className = 'cls-value ' + cls;
-      document.getElementById('classifyResult').classList.remove('hidden');
+      el.className = 'cls-result-value ' + cls;
+      document.getElementById('classifyResultArea').classList.remove('hidden');
 
       clsHistory.unshift({ text, cls });
+      saveClsHistory();
       renderHistory();
       input.value = '';
-    } catch (e) { alert('Error: ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Classify'; }
+      autoGrow(input);
+    } catch (e) { showToast('Connection error: ' + e.message); }
+    finally { btn.disabled = false; }
   }
 
   function renderHistory() {
-    const card = document.getElementById('classifyHistory');
+    const section = document.getElementById('classifyHistorySection');
     const list = document.getElementById('historyList');
-    if (!clsHistory.length) { card.classList.add('hidden'); return; }
-    card.classList.remove('hidden');
+    if (!clsHistory.length) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
     list.innerHTML = clsHistory.map(h => `
-      <div class="history-item">
-        <div class="history-text">${esc(h.text)}</div>
+      <div class="cls-history-item">
+        <div class="cls-history-text">${esc(h.text)}</div>
         <span class="badge ${h.cls}">${h.cls}</span>
       </div>`).join('');
   }
@@ -238,14 +577,21 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runClassify(); }
   });
 
-  // ── Drag & drop ───────────────────────────────────────
+  function autoGrow(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+
+  loadClsHistory();
+  renderHistory();
+
+  // ── Drag & Drop ──────────────────────────────────────
   const uploadArea = document.getElementById('uploadArea');
   uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag'); });
   uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag'));
   uploadArea.addEventListener('drop', e => {
     e.preventDefault(); uploadArea.classList.remove('drag');
-    const f = e.dataTransfer.files[0];
-    if (f) setFile(f);
+    if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
   });
 
   let selectedFile = null;
@@ -253,19 +599,49 @@
   function setFile(f) {
     selectedFile = f;
     const nameEl = document.getElementById('uploadName');
-    nameEl.textContent = f.name;
+    const size = f.size < 1024 * 1024
+      ? (f.size / 1024).toFixed(1) + ' KB'
+      : (f.size / 1024 / 1024).toFixed(1) + ' MB';
+    nameEl.textContent = `${f.name} (${size})`;
     nameEl.classList.remove('hidden');
     document.getElementById('analyzeBtn').disabled = false;
   }
 
-  // ── Analyze ───────────────────────────────────────────
+  // ── Analyze ──────────────────────────────────────────
+  let currentReport = null;
+  let currentFilename = '';
+  let timerInterval = null;
+
+  function startTimer() {
+    const statusEl = document.getElementById('progressStatus');
+    const textEl = document.getElementById('progressText');
+    statusEl.classList.remove('hidden');
+    let elapsed = 0;
+    textEl.textContent = 'Processing… 0s';
+    timerInterval = setInterval(() => {
+      elapsed++;
+      const step = elapsed < 15 ? 'Transcribing audio…'
+                 : elapsed < 40 ? 'Running speaker diarization…'
+                 : elapsed < 60 ? 'Classifying utterances…'
+                 : 'Generating report…';
+      textEl.textContent = `${step} ${elapsed}s`;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+    document.getElementById('progressStatus').classList.add('hidden');
+  }
+
   async function runAnalyze() {
     if (!selectedFile) return;
     const btn = document.getElementById('analyzeBtn');
     const therapist = document.getElementById('therapistInput').value.trim();
 
-    btn.disabled = true; btn.textContent = 'Analyzing… (this may take a while)';
+    btn.disabled = true; btn.textContent = 'Analyzing…';
     document.getElementById('reportSection').classList.add('hidden');
+    document.getElementById('statsPanel').classList.add('hidden');
+    startTimer();
 
     try {
       const form = new FormData();
@@ -275,49 +651,53 @@
 
       const res = await fetch(url, { method: 'POST', body: form });
       const data = await res.json();
-      if (data.error) { alert('Error: ' + data.error); return; }
+      if (data.error) { showToast(data.error); return; }
+
+      currentReport = data;
+      currentFilename = selectedFile.name;
       renderReport(data);
-    } catch (e) { alert('Error: ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Analyze'; }
+      saveSession(currentFilename, data);
+      updateNavHistory();
+      showToast('Analysis complete', 'success');
+    } catch (e) { showToast('Connection error: ' + e.message); }
+    finally {
+      stopTimer();
+      btn.disabled = false; btn.textContent = 'Analyze';
+    }
   }
 
   function renderReport(data) {
     const { segments, stats } = data;
     const { therapist_speaker, total_therapist_utterances, directed, guided, none, speaker_durations } = stats;
 
-    // meta
-    document.getElementById('metaRow').innerHTML =
-      `<span>Therapist: <strong>${therapist_speaker}</strong></span>` +
-      `<span>Utterances: <strong>${total_therapist_utterances}</strong></span>`;
-
-    // stat cards
-    document.getElementById('pctD').textContent = directed.percentage + '%';
-    document.getElementById('cntD').textContent = directed.count + ' utterances';
-    document.getElementById('pctG').textContent = guided.percentage + '%';
-    document.getElementById('cntG').textContent = guided.count + ' utterances';
-    document.getElementById('pctN').textContent = none.percentage + '%';
-    document.getElementById('cntN').textContent = none.count + ' utterances';
-
-    // progress bar
-    document.getElementById('progressBar').innerHTML =
+    // Right sidebar stats
+    document.getElementById('statsMeta').innerHTML =
+      `Therapist: ${therapist_speaker} · ${total_therapist_utterances} utterances`;
+    document.getElementById('statD').textContent = `${directed.percentage}% (${directed.count})`;
+    document.getElementById('statG').textContent = `${guided.percentage}% (${guided.count})`;
+    document.getElementById('statN').textContent = `${none.percentage}% (${none.count})`;
+    document.getElementById('miniBar').innerHTML =
       `<div class="seg-d" style="width:${directed.percentage}%"></div>` +
       `<div class="seg-g" style="width:${guided.percentage}%"></div>` +
       `<div class="seg-n" style="width:${none.percentage}%"></div>`;
+    document.getElementById('statsPanel').classList.remove('hidden');
 
-    // durations
+    // Durations
     const totalDur = Object.values(speaker_durations).reduce((a, b) => a + b, 0);
     document.getElementById('durationList').innerHTML =
       Object.entries(speaker_durations).sort((a, b) => b[1] - a[1]).map(([spk, dur]) => {
         const pct = totalDur > 0 ? Math.round(dur / totalDur * 100) : 0;
         const isTherapist = spk === therapist_speaker;
-        return `<div class="duration-row">
-          <span>${spk}${isTherapist ? ' (therapist)' : ''}</span>
-          <span>${dur.toFixed(1)}s · ${pct}%</span>
-        </div>
-        <div class="duration-bar" style="width:${pct}%; margin-bottom:10px; ${isTherapist ? '' : 'background:#334155;'}"></div>`;
+        return `<div class="dur-item">
+          <div class="dur-header">
+            <span>${spk}${isTherapist ? ' (therapist)' : ''}</span>
+            <span>${dur.toFixed(1)}s · ${pct}%</span>
+          </div>
+          <div class="dur-bar"><div class="dur-bar-fill ${isTherapist ? '' : 'secondary'}" style="width:${pct}%"></div></div>
+        </div>`;
       }).join('');
 
-    // segments
+    // Segments
     document.getElementById('segmentList').innerHTML = segments.map(seg => {
       const isTherapist = seg.speaker === therapist_speaker;
       const cls = seg.classification;
@@ -336,10 +716,139 @@
     document.getElementById('reportSection').classList.remove('hidden');
   }
 
-  // ── Helpers ───────────────────────────────────────────
+  // ── Export ───────────────────────────────────────────
+  function exportJSON() {
+    if (!currentReport) return;
+    const blob = new Blob([JSON.stringify(currentReport, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, stem(currentFilename) + '_report.json');
+  }
+
+  function exportCSV() {
+    if (!currentReport) return;
+    const rows = [['start', 'end', 'speaker', 'text', 'classification']];
+    for (const seg of currentReport.segments) {
+      rows.push([
+        seg.start.toFixed(2), seg.end.toFixed(2), seg.speaker || '',
+        '"' + (seg.text || '').replace(/"/g, '""') + '"', seg.classification || '',
+      ]);
+    }
+    const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
+    downloadBlob(blob, stem(currentFilename) + '_report.csv');
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function stem(f) { return f.replace(/\.[^.]+$/, ''); }
+
+  // ── Session History ──────────────────────────────────
+  const STORAGE_KEY = 'arise_sessions';
+
+  function loadSessions() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
+  }
+  function saveSessions(sessions) { localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions)); }
+
+  function saveSession(filename, data) {
+    const sessions = loadSessions();
+    sessions.unshift({
+      id: Date.now(), filename,
+      timestamp: new Date().toISOString(),
+      stats: data.stats, segments: data.segments,
+    });
+    saveSessions(sessions.slice(0, 20));
+  }
+
+  function renderSessionList() {
+    const sessions = loadSessions();
+    const el = document.getElementById('sessionList');
+    if (!sessions.length) {
+      el.innerHTML = '<div class="empty-state">No sessions yet. Analyze an audio file to get started.</div>';
+      return;
+    }
+    el.innerHTML = sessions.map(s => {
+      const d = s.stats.directed, g = s.stats.guided, n = s.stats.none;
+      const date = new Date(s.timestamp).toLocaleString();
+      return `<div class="session-card" onclick="loadSession(${s.id})">
+        <div>
+          <div class="session-name">${esc(s.filename)}</div>
+          <div class="session-meta">${date} · ${s.stats.total_therapist_utterances} utterances</div>
+        </div>
+        <div class="session-badges">
+          <span class="badge DIRECTED">${d.percentage}%</span>
+          <span class="badge GUIDED">${g.percentage}%</span>
+          <span class="badge NONE">${n.percentage}%</span>
+          <button class="session-del" onclick="deleteSession(event,${s.id})">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function loadSession(id) {
+    const s = loadSessions().find(x => x.id === id);
+    if (!s) return;
+    currentReport = { segments: s.segments, stats: s.stats };
+    currentFilename = s.filename;
+    renderReport(currentReport);
+    switchPage('analyze');
+  }
+
+  function deleteSession(e, id) {
+    e.stopPropagation();
+    saveSessions(loadSessions().filter(s => s.id !== id));
+    renderSessionList();
+    updateNavHistory();
+  }
+
+  function clearAllSessions() {
+    if (!confirm('Clear all session history?')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    renderSessionList();
+    updateNavHistory();
+  }
+
+  function updateNavHistory() {
+    const sessions = loadSessions().slice(0, 5);
+    const el = document.getElementById('navHistoryList');
+    if (!sessions.length) {
+      el.innerHTML = '<div class="nav-history-item" style="color:#555;font-style:italic;">No sessions yet</div>';
+      return;
+    }
+    el.innerHTML = sessions.map(s =>
+      `<div class="nav-history-item" onclick="loadSession(${s.id})">${esc(s.filename)}</div>`
+    ).join('');
+  }
+
+  updateNavHistory();
+
+  // ── Model Status ─────────────────────────────────────
+  async function checkModelStatus() {
+    const el = document.getElementById('modelStatusText');
+    try {
+      const res = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'test' }),
+      });
+      if (res.ok) {
+        el.innerHTML = '<span class="status-dot online"></span>qwen-bala';
+        showToast('Model is online', 'success');
+      } else {
+        el.innerHTML = '<span class="status-dot offline"></span>qwen-bala';
+        showToast('Model returned error');
+      }
+    } catch {
+      el.innerHTML = '<span class="status-dot offline"></span>qwen-bala';
+      showToast('Cannot reach Ollama');
+    }
+  }
+
+  // ── Helpers ──────────────────────────────────────────
   const COLORS = ['#60a5fa', '#a78bfa', '#34d399', '#f472b6', '#facc15'];
-  const colorMap = {};
-  let colorIdx = 0;
+  const colorMap = {}; let colorIdx = 0;
   function speakerColor(spk) {
     if (!colorMap[spk]) colorMap[spk] = COLORS[colorIdx++ % COLORS.length];
     return colorMap[spk];
@@ -351,7 +860,7 @@
   }
 
   function esc(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 </script>
 </body>

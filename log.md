@@ -124,3 +124,18 @@
 - ✅ Session Analysis tab：音频上传（拖拽/点击）→ 调 `/api/analyze` → 展示报告
 - ✅ 报告展示：DIRECTED/GUIDED/NONE 统计卡片 + 彩色进度条 + 说话人时长 + 逐句转录
 - ✅ 端到端测试通过（test.m4a，DIRECTED 100% 显示正常）
+
+### 2026-04-10 - Session 6: Phase 4 前端完善
+
+**完成内容**：
+- ✅ 重构为 Google AI Studio 风格三栏布局（左导航 + 主区域 + 右设置面板）
+- ✅ 左侧边栏：品牌、导航、Recent Sessions 快捷列表、模型状态指示
+- ✅ 右侧边栏：模型信息、Therapist Speaker 设置、分析后统计摘要
+- ✅ Classify 页：三张分类说明卡片（可点击快速测试）+ 底部 prompt bar
+- ✅ Toast 通知替换 alert（error/success 自动消失）
+- ✅ 报告导出 JSON / CSV
+- ✅ 历史会话 localStorage 持久化（最多 20 条），可回放报告
+- ✅ 分类历史 localStorage 持久化（最多 50 条）
+- ✅ 分析进度计时器（按阶段显示 Transcribing / Diarization / Classifying）
+- ✅ 文件大小显示、移动端折叠菜单（汉堡 + 设置按钮，遮罩滑出）
+- ✅ 响应式布局：<900px 右栏折叠，<700px 左栏折叠，<440px 卡片单列
