@@ -159,16 +159,22 @@ uvicorn app.main:app --reload
 ## Pipeline 评估结果（2026-04-15）
 
 - 测试音频：30 分钟康复对话，gold standard 44 条 cue（16 GUIDED + 28 DIRECTED）
-- 总体准确率：**68.2%**（30/44），GUIDED 81.3%，DIRECTED 60.7%
-- 主要问题：短指令（"breathe"、"right here"）在 Whisper 长句中被淹没，分类器无法识别
-- 改进方向：post-ASR 句子细分、GPU diarization（卸载 Ollama 腾显存）、短指令训练数据
+- **Whisper + qwen-bala：68.2%**（30/44），GUIDED 81.3%，DIRECTED 60.7%
+- **AWS 文本 + qwen-bala：29.5%**（13/44），粗切分导致短指令被淹没
+- **结论：细粒度切分是关键**，Whisper 按停顿切分比 AWS 按轮次切分准确率高一倍
+- **Prompt 改进无效**：qwen-bala 是微调模型，system prompt 定义对分类行为影响极小
+- **GPU pyannote**：58 秒 vs CPU 28 分钟（30 倍加速），需 PyTorch GPU 版
+- 主要问题：短指令在长句中被淹没 + 微调数据短指令样本不足
+- 改进方向：post-ASR 子句拆分（最有效）、补充短指令训练数据、GPU 显存调度集成
 - 详细报告：`test/report.md`
 
 ## 已知问题 / 坑
 
+- 🐛 短指令误判：短指令（"breathe"、"right here"）在 Whisper 长句中被淹没标为 NONE，改 prompt 无效，需 post-ASR 子句拆分或补充训练数据
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
 - ⚠️ faster-whisper GPU 已启用（pip nvidia-cublas-cu12，asr.py 动态加载 DLL）
-- ⚠️ pyannote 依赖 PyTorch（~800MB），打包时用 torch CPU-only 或 ONNX 优化
+- ⚠️ PyTorch 已切换为 GPU 版（torch 2.4.1+cu121），pyannote GPU 可用（58s vs CPU 28 分钟）
+- ⚠️ torch 版本降级到 2.4.1（pyannote 要求 >=2.8 但实际可用），CTranslate2 和 PyTorch CUDA 不能同进程运行，需分步执行
 - ⚠️ torchcodec 在 Windows 不可用，已卸载，音频解码走 PyAV
-- GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB，whisper GPU 可用，pyannote 跑 CPU（瓶颈 ~28 分钟）
-- speaker 对齐用中点匹配（asr.py:91），理论上 whisper/pyannote 切分不一致时中点可能落空隙标 UNKNOWN，但康复对话轮次清晰，实际风险低
+- GPU 显存分配：Ollama 5.2GB + Whisper + pyannote 不能同时跑，需分时复用（Whisper → 释放 → pyannote → 释放 → Ollama）
+- speaker 对齐用中点匹配（asr.py:91），GPU pyannote 已消除所有 UNKNOWN 标签
