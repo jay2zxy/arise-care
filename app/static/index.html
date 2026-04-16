@@ -150,6 +150,8 @@
     .btn { padding: 9px 22px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-size: 0.88rem; cursor: pointer; transition: background 0.15s; font-family: inherit; }
     .btn:hover { background: #2563eb; }
     .btn:disabled { background: #333; color: #555; cursor: not-allowed; }
+    .btn-cancel { background: #ef4444; }
+    .btn-cancel:hover { background: #dc2626; }
     .btn-sm { padding: 6px 14px; font-size: 0.82rem; }
     .btn-ghost { background: transparent; border: 1px solid #444; color: #aaa; }
     .btn-ghost:hover { background: #2a2a2a; border-color: #555; color: #e3e3e3; }
@@ -378,6 +380,7 @@
 
     <div class="upload-actions">
       <button class="btn" id="analyzeBtn" onclick="runAnalyze()" disabled>Analyze</button>
+      <button class="btn btn-cancel hidden" id="cancelBtn" onclick="cancelAnalyze()">Cancel</button>
       <div class="progress-status hidden" id="progressStatus">
         <div class="spinner"></div>
         <span id="progressText">Processing…</span>
@@ -633,15 +636,28 @@
     document.getElementById('progressStatus').classList.add('hidden');
   }
 
+  let analyzeController = null;
+
+  function cancelAnalyze() {
+    if (analyzeController) {
+      analyzeController.abort();
+      analyzeController = null;
+    }
+  }
+
   async function runAnalyze() {
     if (!selectedFile) return;
     const btn = document.getElementById('analyzeBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
     const therapist = document.getElementById('therapistInput').value.trim();
 
     btn.disabled = true; btn.textContent = 'Analyzing…';
+    cancelBtn.classList.remove('hidden');
     document.getElementById('reportSection').classList.add('hidden');
     document.getElementById('statsPanel').classList.add('hidden');
     startTimer();
+
+    analyzeController = new AbortController();
 
     try {
       const form = new FormData();
@@ -649,7 +665,7 @@
       let url = '/api/analyze';
       if (therapist) url += '?therapist_speaker=' + encodeURIComponent(therapist);
 
-      const res = await fetch(url, { method: 'POST', body: form });
+      const res = await fetch(url, { method: 'POST', body: form, signal: analyzeController.signal });
       const data = await res.json();
       if (data.error) { showToast(data.error); return; }
 
@@ -659,10 +675,15 @@
       saveSession(currentFilename, data);
       updateNavHistory();
       showToast('Analysis complete', 'success');
-    } catch (e) { showToast('Connection error: ' + e.message); }
+    } catch (e) {
+      if (e.name === 'AbortError') { showToast('Analysis cancelled'); }
+      else { showToast('Connection error: ' + e.message); }
+    }
     finally {
       stopTimer();
       btn.disabled = false; btn.textContent = 'Analyze';
+      cancelBtn.classList.add('hidden');
+      analyzeController = null;
     }
   }
 

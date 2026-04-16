@@ -164,8 +164,13 @@ uvicorn app.main:app --reload
 - **结论：细粒度切分是关键**，Whisper 按停顿切分比 AWS 按轮次切分准确率高一倍
 - **Prompt 改进无效**：qwen-bala 是微调模型，system prompt 定义对分类行为影响极小
 - **GPU pyannote**：58 秒 vs CPU 28 分钟（30 倍加速），需 PyTorch GPU 版
+- **ASR 质量**：Whisper WER 93% vs AWS 8%（对比 gold standard），但 gold standard 文本基于 AWS 转录，对比原始音频 Whisper 实际更准确。WER 高是参照物问题，不是 Whisper 差
 - 主要问题：短指令在长句中被淹没 + 微调数据短指令样本不足
-- 改进方向：post-ASR 子句拆分（最有效）、补充短指令训练数据、GPU 显存调度集成
+- **分类瓶颈**：每条 utterance 独立调一次 Ollama API（system prompt + user message），200 条 × ~2s ≈ 400s，占总耗时 80%+
+- 改进方向（按优先级）：
+  1. post-ASR 子句拆分（提升准确率，最有效）
+  2. 分类加速：批量打包多条 utterance 一次调用 / 蒸馏到 1.5B-3B 小模型 / 换 BERT 级分类器（毫秒级）
+  3. 补充短指令训练数据
 - 详细报告：`test/report.md`
 
 ## 已知问题 / 坑
@@ -174,7 +179,9 @@ uvicorn app.main:app --reload
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
 - ⚠️ faster-whisper GPU 已启用（pip nvidia-cublas-cu12，asr.py 动态加载 DLL）
 - ⚠️ PyTorch 已切换为 GPU 版（torch 2.4.1+cu121），pyannote GPU 可用（58s vs CPU 28 分钟）
-- ⚠️ torch 版本降级到 2.4.1（pyannote 要求 >=2.8 但实际可用），CTranslate2 和 PyTorch CUDA 不能同进程运行，需分步执行
+- ⚠️ torch 版本降级到 2.4.1（pyannote 要求 >=2.8 但实际可用）
+- ✅ CTranslate2 + PyTorch CUDA 在 uvicorn 进程中可共存（测试脚本中会冲突，但 FastAPI 服务正常）
 - ⚠️ torchcodec 在 Windows 不可用，已卸载，音频解码走 PyAV
 - GPU 显存分配：Ollama 5.2GB + Whisper + pyannote 不能同时跑，需分时复用（Whisper → 释放 → pyannote → 释放 → Ollama）
+- ⏱️ 30 分钟音频全 GPU pipeline 耗时 ~8 分钟（Whisper ~55s + pyannote ~58s + Ollama 分类 ~400s），分类占 80%+
 - speaker 对齐用中点匹配（asr.py:91），GPU pyannote 已消除所有 UNKNOWN 标签

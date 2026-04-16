@@ -40,6 +40,8 @@ def get_diarize_pipeline() -> Pipeline:
         _diarize_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1", token=token
         )
+        if torch.cuda.is_available():
+            _diarize_pipeline.to(torch.device("cuda"))
     return _diarize_pipeline
 
 
@@ -95,14 +97,13 @@ def transcribe_with_diarization(audio_path: str) -> dict:
     segments = transcribe(audio_path)
     speakers = diarize(audio_path)
 
-    # Assign speaker to each transcription segment by overlap
+    # Assign speaker to each transcription segment by max overlap
     for seg in segments:
-        seg_mid = (seg["start"] + seg["end"]) / 2
-        best_speaker = "UNKNOWN"
+        overlap: dict[str, float] = {}
         for sp in speakers:
-            if sp["start"] <= seg_mid <= sp["end"]:
-                best_speaker = sp["speaker"]
-                break
-        seg["speaker"] = best_speaker
+            o = max(0.0, min(seg["end"], sp["end"]) - max(seg["start"], sp["start"]))
+            if o > 0:
+                overlap[sp["speaker"]] = overlap.get(sp["speaker"], 0.0) + o
+        seg["speaker"] = max(overlap, key=overlap.get) if overlap else "UNKNOWN"
 
     return {"segments": segments, "speakers": speakers}
