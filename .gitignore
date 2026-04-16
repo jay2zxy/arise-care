@@ -29,6 +29,7 @@ Thumbs.db
 .claude/
 
 # Test files
+test/
 *.m4a
 *.wav
 *.mp3
