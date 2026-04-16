@@ -1,10 +1,19 @@
+import os
+
+try:
+    import nvidia.cublas
+    _cublas_bin = os.path.join(nvidia.cublas.__path__[0], "bin")
+    if os.path.isdir(_cublas_bin):
+        os.environ["PATH"] = _cublas_bin + os.pathsep + os.environ.get("PATH", "")
+except ImportError:
+    pass
+
 import av
 import torch
 import numpy as np
 from faster_whisper import WhisperModel
 from pyannote.audio import Pipeline
 from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE
-import os
 from dotenv import load_dotenv
 
 load_dotenv()

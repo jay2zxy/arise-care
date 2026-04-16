@@ -7,7 +7,7 @@ const OLLAMA_URL = "http://localhost:11434/api/chat";
 const MODEL = "qwen-bala";
 
 const server = http.createServer(async (req, res) => {
-  // 静态页面
+  // static
   if (req.method === "GET" && req.url === "/") {
     const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf-8");
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -15,7 +15,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 分类 API
+  // API
   if (req.method === "POST" && req.url === "/classify") {
     let body = "";
     for await (const chunk of req) body += chunk;

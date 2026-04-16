@@ -17,7 +17,7 @@
 
 ---
 
-## 项目状态（截至 2026-04-10）
+## 项目状态（截至 2026-04-15）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
@@ -25,7 +25,10 @@
 | P2 | 音频转录 + 说话人分离（faster-whisper + pyannote） | ✅ 完成 |
 | P3 | 完整 Pipeline + 统计报告 | ✅ 完成 |
 | P4 | 前端完善（UI/导出/历史） | ✅ 完成 |
-| P5 | 打包分发（Tauri 桌面 + 移动端 API） | ⬜ 待开始 |
+| P5 | Pipeline 评估 + GPU 加速 | ✅ 完成 |
+| P6 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
+| P7 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
+| P8 | 打包分发（Tauri 桌面 + 移动端 API） | ⬜ 待开始 |
 
 ---
 
@@ -136,11 +139,36 @@ uvicorn app.main:app --reload
 
 ---
 
+## 团队与分工（2026-04-15 会议）
+
+| 成员 | 模块 | 职责 |
+|------|------|------|
+| Yanshan Wang | 全局 | 技术 PI / 统筹 |
+| Beth Skidmore | 全局 | 临床 PI |
+| Jay | Module B/D | Verbal Cue 识别 + 定量统计 |
+| Maneesh Bilalpur | Module A | SOAP Note 生成（John Snow Labs） |
+| Manoj | Module C | 概念抽取 + 本体映射（ICF/NCBO/CPT） |
+| Katie, May | 数据 | 临床标注 |
+
+### Module B/D 待扩展（Jay 负责）
+
+- Cue 输出格式：需加 `cue_id`、`duration`、`linked_concepts`（对接 Module C）
+- 统计指标：需加每类 cue 的 `mean/min/max/range` 时长、delta proportion（干预前后对比）
+- 待确认：NONE 类是否保留、cue 边界精度（词级 vs 句级）、session 划分规则
+
+## Pipeline 评估结果（2026-04-15）
+
+- 测试音频：30 分钟康复对话，gold standard 44 条 cue（16 GUIDED + 28 DIRECTED）
+- 总体准确率：**68.2%**（30/44），GUIDED 81.3%，DIRECTED 60.7%
+- 主要问题：短指令（"breathe"、"right here"）在 Whisper 长句中被淹没，分类器无法识别
+- 改进方向：post-ASR 句子细分、GPU diarization（卸载 Ollama 腾显存）、短指令训练数据
+- 详细报告：`test/report.md`
+
 ## 已知问题 / 坑
 
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
-- ⚠️ faster-whisper GPU 需要 CUDA 12（cublas64_12.dll），当前缺失，暂用 CPU 模式
+- ⚠️ faster-whisper GPU 已启用（pip nvidia-cublas-cu12，asr.py 动态加载 DLL）
 - ⚠️ pyannote 依赖 PyTorch（~800MB），打包时用 torch CPU-only 或 ONNX 优化
 - ⚠️ torchcodec 在 Windows 不可用，已卸载，音频解码走 PyAV
-- GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB，whisper + pyannote 跑 CPU
-- speaker 对齐用中点匹配（asr.py:91），理论上 whisper/pyannote 切分不一致时中点可能落空隙标 UNKNOWN，但康复对话轮次清晰，实际风险低。未来可改用重叠比例匹配
+- GPU 显存分配：Ollama qwen-bala 占 ~5.2GB / 8GB，whisper GPU 可用，pyannote 跑 CPU（瓶颈 ~28 分钟）
+- speaker 对齐用中点匹配（asr.py:91），理论上 whisper/pyannote 切分不一致时中点可能落空隙标 UNKNOWN，但康复对话轮次清晰，实际风险低
