@@ -452,10 +452,6 @@
       <div class="stat-row-label"><div class="stat-dot g"></div> Guided</div>
       <div class="stat-row-value g" id="statG">—</div>
     </div>
-    <div class="stat-row">
-      <div class="stat-row-label"><div class="stat-dot n"></div> None</div>
-      <div class="stat-row-value n" id="statN">—</div>
-    </div>
 
     <div class="mini-bar" id="miniBar"></div>
   </div>
@@ -691,16 +687,17 @@
     const { segments, stats } = data;
     const { therapist_speaker, total_therapist_utterances, directed, guided, none, speaker_durations } = stats;
 
-    // Right sidebar stats
+    // Right sidebar stats — percentages based on Directed + Guided only
+    const dgTotal = directed.count + guided.count;
+    const dPct = dgTotal > 0 ? Math.round(directed.count / dgTotal * 1000) / 10 : 0;
+    const gPct = dgTotal > 0 ? Math.round(guided.count / dgTotal * 1000) / 10 : 0;
     document.getElementById('statsMeta').innerHTML =
-      `Therapist: ${therapist_speaker} · ${total_therapist_utterances} utterances`;
-    document.getElementById('statD').textContent = `${directed.percentage}% (${directed.count})`;
-    document.getElementById('statG').textContent = `${guided.percentage}% (${guided.count})`;
-    document.getElementById('statN').textContent = `${none.percentage}% (${none.count})`;
+      `Therapist: ${therapist_speaker} · ${dgTotal} cues`;
+    document.getElementById('statD').textContent = `${dPct}% (${directed.count})`;
+    document.getElementById('statG').textContent = `${gPct}% (${guided.count})`;
     document.getElementById('miniBar').innerHTML =
-      `<div class="seg-d" style="width:${directed.percentage}%"></div>` +
-      `<div class="seg-g" style="width:${guided.percentage}%"></div>` +
-      `<div class="seg-n" style="width:${none.percentage}%"></div>`;
+      `<div class="seg-d" style="width:${dPct}%"></div>` +
+      `<div class="seg-g" style="width:${gPct}%"></div>`;
     document.getElementById('statsPanel').classList.remove('hidden');
 
     // Durations
@@ -791,17 +788,19 @@
       return;
     }
     el.innerHTML = sessions.map(s => {
-      const d = s.stats.directed, g = s.stats.guided, n = s.stats.none;
+      const d = s.stats.directed, g = s.stats.guided;
+      const dgTotal = d.count + g.count;
+      const dPct = dgTotal > 0 ? Math.round(d.count / dgTotal * 1000) / 10 : 0;
+      const gPct = dgTotal > 0 ? Math.round(g.count / dgTotal * 1000) / 10 : 0;
       const date = new Date(s.timestamp).toLocaleString();
       return `<div class="session-card" onclick="loadSession(${s.id})">
         <div>
           <div class="session-name">${esc(s.filename)}</div>
-          <div class="session-meta">${date} · ${s.stats.total_therapist_utterances} utterances</div>
+          <div class="session-meta">${date} · ${dgTotal} cues</div>
         </div>
         <div class="session-badges">
-          <span class="badge DIRECTED">${d.percentage}%</span>
-          <span class="badge GUIDED">${g.percentage}%</span>
-          <span class="badge NONE">${n.percentage}%</span>
+          <span class="badge DIRECTED">${dPct}%</span>
+          <span class="badge GUIDED">${gPct}%</span>
           <button class="session-del" onclick="deleteSession(event,${s.id})">✕</button>
         </div>
       </div>`;
