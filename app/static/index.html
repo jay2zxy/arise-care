@@ -150,6 +150,8 @@
     .btn { padding: 9px 22px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-size: 0.88rem; cursor: pointer; transition: background 0.15s; font-family: inherit; }
     .btn:hover { background: #2563eb; }
     .btn:disabled { background: #333; color: #555; cursor: not-allowed; }
+    .btn-cancel { background: #ef4444; }
+    .btn-cancel:hover { background: #dc2626; }
     .btn-sm { padding: 6px 14px; font-size: 0.82rem; }
     .btn-ghost { background: transparent; border: 1px solid #444; color: #aaa; }
     .btn-ghost:hover { background: #2a2a2a; border-color: #555; color: #e3e3e3; }
@@ -378,6 +380,7 @@
 
     <div class="upload-actions">
       <button class="btn" id="analyzeBtn" onclick="runAnalyze()" disabled>Analyze</button>
+      <button class="btn btn-cancel hidden" id="cancelBtn" onclick="cancelAnalyze()">Cancel</button>
       <div class="progress-status hidden" id="progressStatus">
         <div class="spinner"></div>
         <span id="progressText">Processing…</span>
@@ -448,10 +451,6 @@
     <div class="stat-row">
       <div class="stat-row-label"><div class="stat-dot g"></div> Guided</div>
       <div class="stat-row-value g" id="statG">—</div>
-    </div>
-    <div class="stat-row">
-      <div class="stat-row-label"><div class="stat-dot n"></div> None</div>
-      <div class="stat-row-value n" id="statN">—</div>
     </div>
 
     <div class="mini-bar" id="miniBar"></div>
@@ -633,15 +632,28 @@
     document.getElementById('progressStatus').classList.add('hidden');
   }
 
+  let analyzeController = null;
+
+  function cancelAnalyze() {
+    if (analyzeController) {
+      analyzeController.abort();
+      analyzeController = null;
+    }
+  }
+
   async function runAnalyze() {
     if (!selectedFile) return;
     const btn = document.getElementById('analyzeBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
     const therapist = document.getElementById('therapistInput').value.trim();
 
     btn.disabled = true; btn.textContent = 'Analyzing…';
+    cancelBtn.classList.remove('hidden');
     document.getElementById('reportSection').classList.add('hidden');
     document.getElementById('statsPanel').classList.add('hidden');
     startTimer();
+
+    analyzeController = new AbortController();
 
     try {
       const form = new FormData();
@@ -649,7 +661,7 @@
       let url = '/api/analyze';
       if (therapist) url += '?therapist_speaker=' + encodeURIComponent(therapist);
 
-      const res = await fetch(url, { method: 'POST', body: form });
+      const res = await fetch(url, { method: 'POST', body: form, signal: analyzeController.signal });
       const data = await res.json();
       if (data.error) { showToast(data.error); return; }
 
@@ -659,10 +671,15 @@
       saveSession(currentFilename, data);
       updateNavHistory();
       showToast('Analysis complete', 'success');
-    } catch (e) { showToast('Connection error: ' + e.message); }
+    } catch (e) {
+      if (e.name === 'AbortError') { showToast('Analysis cancelled'); }
+      else { showToast('Connection error: ' + e.message); }
+    }
     finally {
       stopTimer();
       btn.disabled = false; btn.textContent = 'Analyze';
+      cancelBtn.classList.add('hidden');
+      analyzeController = null;
     }
   }
 
@@ -670,16 +687,17 @@
     const { segments, stats } = data;
     const { therapist_speaker, total_therapist_utterances, directed, guided, none, speaker_durations } = stats;
 
-    // Right sidebar stats
+    // Right sidebar stats — percentages based on Directed + Guided only
+    const dgTotal = directed.count + guided.count;
+    const dPct = dgTotal > 0 ? Math.round(directed.count / dgTotal * 1000) / 10 : 0;
+    const gPct = dgTotal > 0 ? Math.round(guided.count / dgTotal * 1000) / 10 : 0;
     document.getElementById('statsMeta').innerHTML =
-      `Therapist: ${therapist_speaker} · ${total_therapist_utterances} utterances`;
-    document.getElementById('statD').textContent = `${directed.percentage}% (${directed.count})`;
-    document.getElementById('statG').textContent = `${guided.percentage}% (${guided.count})`;
-    document.getElementById('statN').textContent = `${none.percentage}% (${none.count})`;
+      `Therapist: ${therapist_speaker} · ${dgTotal} cues`;
+    document.getElementById('statD').textContent = `${dPct}% (${directed.count})`;
+    document.getElementById('statG').textContent = `${gPct}% (${guided.count})`;
     document.getElementById('miniBar').innerHTML =
-      `<div class="seg-d" style="width:${directed.percentage}%"></div>` +
-      `<div class="seg-g" style="width:${guided.percentage}%"></div>` +
-      `<div class="seg-n" style="width:${none.percentage}%"></div>`;
+      `<div class="seg-d" style="width:${dPct}%"></div>` +
+      `<div class="seg-g" style="width:${gPct}%"></div>`;
     document.getElementById('statsPanel').classList.remove('hidden');
 
     // Durations
@@ -770,17 +788,19 @@
       return;
     }
     el.innerHTML = sessions.map(s => {
-      const d = s.stats.directed, g = s.stats.guided, n = s.stats.none;
+      const d = s.stats.directed, g = s.stats.guided;
+      const dgTotal = d.count + g.count;
+      const dPct = dgTotal > 0 ? Math.round(d.count / dgTotal * 1000) / 10 : 0;
+      const gPct = dgTotal > 0 ? Math.round(g.count / dgTotal * 1000) / 10 : 0;
       const date = new Date(s.timestamp).toLocaleString();
       return `<div class="session-card" onclick="loadSession(${s.id})">
         <div>
           <div class="session-name">${esc(s.filename)}</div>
-          <div class="session-meta">${date} · ${s.stats.total_therapist_utterances} utterances</div>
+          <div class="session-meta">${date} · ${dgTotal} cues</div>
         </div>
         <div class="session-badges">
-          <span class="badge DIRECTED">${d.percentage}%</span>
-          <span class="badge GUIDED">${g.percentage}%</span>
-          <span class="badge NONE">${n.percentage}%</span>
+          <span class="badge DIRECTED">${dPct}%</span>
+          <span class="badge GUIDED">${gPct}%</span>
           <button class="session-del" onclick="deleteSession(event,${s.id})">✕</button>
         </div>
       </div>`;
