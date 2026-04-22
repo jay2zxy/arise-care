@@ -45,11 +45,13 @@ def run_pipeline(audio_path: str, therapist_speaker: str | None = None) -> dict:
     if therapist_speaker is None:
         therapist_speaker = _detect_therapist(segments)
 
-    # Step 3: classify therapist utterances
+    # Step 3: classify utterances attributed to a known speaker
+    # (labels are text-intrinsic; UI picks therapist after the fact).
+    # UNKNOWN = pyannote couldn't attribute → likely background/noise, skip.
     t0 = time.perf_counter()
     classified_count = 0
     for seg in segments:
-        if seg.get("speaker") == therapist_speaker and seg["text"].strip():
+        if seg["text"].strip() and seg.get("speaker") not in (None, "UNKNOWN"):
             seg["classification"] = classify(seg["text"])
             classified_count += 1
         else:

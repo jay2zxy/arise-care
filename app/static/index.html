@@ -181,6 +181,8 @@
     .segment:last-child { border-bottom: none; }
     .seg-time { font-size: 0.75rem; color: #555; white-space: nowrap; min-width: 72px; padding-top: 2px; font-family: 'SF Mono', 'Cascadia Code', monospace; }
     .seg-speaker { font-size: 0.75rem; white-space: nowrap; min-width: 90px; padding-top: 2px; font-weight: 500; }
+    .seg-speaker-pick { cursor: pointer; border-bottom: 1px dashed rgba(255,255,255,0.2); transition: opacity 0.15s; }
+    .seg-speaker-pick:hover { opacity: 0.75; }
     .seg-text { flex: 1; font-size: 0.88rem; color: #bbb; line-height: 1.6; }
     .seg-badge { min-width: 76px; text-align: right; padding-top: 2px; }
     .therapist-row .seg-text { color: #e3e3e3; }
@@ -436,8 +438,10 @@
 
   <div class="panel-section">
     <div class="panel-label">Therapist Speaker</div>
-    <input class="panel-input" id="therapistInput" placeholder="Auto-detect (e.g. SPEAKER_00)">
-    <div class="panel-subtitle" style="margin-top:6px;">Leave empty to auto-detect the most frequent speaker as therapist.</div>
+    <select class="panel-input" id="therapistSelect" onchange="onTherapistChange()" disabled>
+      <option value="">(waiting for analysis)</option>
+    </select>
+    <div class="panel-subtitle" style="margin-top:6px;">Auto-detected after analysis; click a speaker label on any row to reassign that utterance individually.</div>
   </div>
 
   <div class="panel-section hidden" id="statsPanel">
@@ -645,7 +649,6 @@
     if (!selectedFile) return;
     const btn = document.getElementById('analyzeBtn');
     const cancelBtn = document.getElementById('cancelBtn');
-    const therapist = document.getElementById('therapistInput').value.trim();
 
     btn.disabled = true; btn.textContent = 'Analyzing…';
     cancelBtn.classList.remove('hidden');
@@ -658,10 +661,7 @@
     try {
       const form = new FormData();
       form.append('file', selectedFile);
-      let url = '/api/analyze';
-      if (therapist) url += '?therapist_speaker=' + encodeURIComponent(therapist);
-
-      const res = await fetch(url, { method: 'POST', body: form, signal: analyzeController.signal });
+      const res = await fetch('/api/analyze', { method: 'POST', body: form, signal: analyzeController.signal });
       const data = await res.json();
       if (data.error) { showToast(data.error); return; }
 
@@ -683,29 +683,54 @@
     }
   }
 
-  function renderReport(data) {
-    const { segments, stats } = data;
-    const { therapist_speaker, total_therapist_utterances, directed, guided, none, speaker_durations } = stats;
+  let currentTherapist = null;
+  let knownSpeakers = [];
 
-    // Right sidebar stats — percentages based on Directed + Guided only
-    const dgTotal = directed.count + guided.count;
-    const dPct = dgTotal > 0 ? Math.round(directed.count / dgTotal * 1000) / 10 : 0;
-    const gPct = dgTotal > 0 ? Math.round(guided.count / dgTotal * 1000) / 10 : 0;
+  function renderReport(data) {
+    currentReport = data;
+    const segments = data.segments;
+    knownSpeakers = [...new Set(segments.map(s => s.speaker || 'UNKNOWN'))].sort();
+    currentTherapist = data.stats.therapist_speaker || knownSpeakers[0];
+
+    const sel = document.getElementById('therapistSelect');
+    sel.innerHTML = knownSpeakers.map(s =>
+      `<option value="${s}" ${s === currentTherapist ? 'selected' : ''}>${s}</option>`
+    ).join('');
+    sel.disabled = false;
+
+    renderSegments();
+    recomputeStats();
+    document.getElementById('reportSection').classList.remove('hidden');
+  }
+
+  function recomputeStats() {
+    const segments = currentReport.segments;
+    const counts = { DIRECTED: 0, GUIDED: 0, NONE: 0 };
+    for (const s of segments) {
+      if (s.speaker === currentTherapist && s.classification) {
+        counts[s.classification] = (counts[s.classification] || 0) + 1;
+      }
+    }
+    const dgTotal = counts.DIRECTED + counts.GUIDED;
+    const dPct = dgTotal > 0 ? Math.round(counts.DIRECTED / dgTotal * 1000) / 10 : 0;
+    const gPct = dgTotal > 0 ? Math.round(counts.GUIDED / dgTotal * 1000) / 10 : 0;
+
     document.getElementById('statsMeta').innerHTML =
-      `Therapist: ${therapist_speaker} · ${dgTotal} cues`;
-    document.getElementById('statD').textContent = `${dPct}% (${directed.count})`;
-    document.getElementById('statG').textContent = `${gPct}% (${guided.count})`;
+      `Therapist: ${currentTherapist} · ${dgTotal} cues`;
+    document.getElementById('statD').textContent = `${dPct}% (${counts.DIRECTED})`;
+    document.getElementById('statG').textContent = `${gPct}% (${counts.GUIDED})`;
     document.getElementById('miniBar').innerHTML =
       `<div class="seg-d" style="width:${dPct}%"></div>` +
       `<div class="seg-g" style="width:${gPct}%"></div>`;
     document.getElementById('statsPanel').classList.remove('hidden');
 
-    // Durations
-    const totalDur = Object.values(speaker_durations).reduce((a, b) => a + b, 0);
+    // Durations list (highlights therapist)
+    const durations = currentReport.stats.speaker_durations || {};
+    const totalDur = Object.values(durations).reduce((a, b) => a + b, 0);
     document.getElementById('durationList').innerHTML =
-      Object.entries(speaker_durations).sort((a, b) => b[1] - a[1]).map(([spk, dur]) => {
+      Object.entries(durations).sort((a, b) => b[1] - a[1]).map(([spk, dur]) => {
         const pct = totalDur > 0 ? Math.round(dur / totalDur * 100) : 0;
-        const isTherapist = spk === therapist_speaker;
+        const isTherapist = spk === currentTherapist;
         return `<div class="dur-item">
           <div class="dur-header">
             <span>${spk}${isTherapist ? ' (therapist)' : ''}</span>
@@ -714,10 +739,11 @@
           <div class="dur-bar"><div class="dur-bar-fill ${isTherapist ? '' : 'secondary'}" style="width:${pct}%"></div></div>
         </div>`;
       }).join('');
+  }
 
-    // Segments
-    document.getElementById('segmentList').innerHTML = segments.map(seg => {
-      const isTherapist = seg.speaker === therapist_speaker;
+  function renderSegments() {
+    document.getElementById('segmentList').innerHTML = currentReport.segments.map((seg, idx) => {
+      const isTherapist = seg.speaker === currentTherapist;
       const cls = seg.classification;
       const speakerLabel = seg.speaker || 'UNKNOWN';
       const badgeHtml = cls
@@ -725,13 +751,26 @@
         : `<span class="badge PATIENT">${isTherapist ? '' : 'patient'}</span>`;
       return `<div class="segment ${isTherapist ? 'therapist-row' : ''}">
         <div class="seg-time">${fmt(seg.start)} – ${fmt(seg.end)}</div>
-        <div class="seg-speaker" style="color:${speakerColor(speakerLabel)}">${speakerLabel}</div>
+        <div class="seg-speaker seg-speaker-pick" style="color:${speakerColor(speakerLabel)}" onclick="cycleSpeaker(${idx})" title="Click to reassign speaker">${speakerLabel}</div>
         <div class="seg-text">${esc(seg.text)}</div>
         <div class="seg-badge">${badgeHtml}</div>
       </div>`;
     }).join('');
+  }
 
-    document.getElementById('reportSection').classList.remove('hidden');
+  function onTherapistChange() {
+    currentTherapist = document.getElementById('therapistSelect').value;
+    renderSegments();
+    recomputeStats();
+  }
+
+  function cycleSpeaker(idx) {
+    const seg = currentReport.segments[idx];
+    const cur = seg.speaker || 'UNKNOWN';
+    const i = knownSpeakers.indexOf(cur);
+    seg.speaker = knownSpeakers[(i + 1) % knownSpeakers.length];
+    renderSegments();
+    recomputeStats();
   }
 
   // ── Export ───────────────────────────────────────────
