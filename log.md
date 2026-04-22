@@ -139,3 +139,45 @@
 - ✅ 分析进度计时器（按阶段显示 Transcribing / Diarization / Classifying）
 - ✅ 文件大小显示、移动端折叠菜单（汉堡 + 设置按钮，遮罩滑出）
 - ✅ 响应式布局：<900px 右栏折叠，<700px 左栏折叠，<440px 卡片单列
+
+### 2026-04-22 - Session 7: P6 实时标注骨架 + 依赖清理
+
+**(2026-04-22) P6 启动（实时标注）**：
+- ✅ 后端 WS 骨架：`app/services/stream.py` + `app/routers/stream.py`，`/api/stream` 端点
+- ✅ 架构：MediaRecorder chunk → WS binary → faster-whisper → 异步分类队列 → WS 推 `utterance`/`classification`
+- ✅ 说话人方案决策：不走在线 pyannote（全局聚类，标签不跨 chunk 对齐），改 enrollment + ECAPA embedding cosine verification
+- ⬜ M2 前端 Live 页未做；M3 enrollment 未做
+
+**(2026-04-22) UI 小改**：
+- ✅ 统计面板去掉 None 行，Directed/Guided 百分比基于两者重算（元信息改为 "N cues"）
+
+**(2026-04-22) 依赖清理 / GPU 栈简化**：
+- ✅ 发现 `nvidia-cublas-cu12`（915MB）和 `torch/lib/cublas64_12.dll` 重复，卸载前者改用 torch bundle
+- ✅ `asr.py` PATH hack 改为指向 `torch/lib/`（Windows 无 RPATH，CTranslate2 靠 PATH 找 DLL）
+- ✅ torch 升级 `2.4.1+cu121` → `2.8.0+cu126`：驱动支持 CUDA 13.2，解决 `pyannote.audio 4.0.4 requires torch>=2.8` 冲突
+- ✅ CTranslate2 4.7.1 + torch 2.8+cu126 共存验证通过（pipeline 端到端跑通）
+- ✅ `requirements.txt` 加 `--extra-index-url` 和 pinned `torch/torchaudio/torchvision`
+- ✅ 新建临时 `venv-test/` 验证从零重建可用（ASR + diarization + classify 结果正确）
+
+**(2026-04-22) 踩坑**：
+- 🐛 pip 23.0.1 解析 pyannote 依赖树 OOM（回溯式 resolver 加载全部候选版本元数据），升到 pip 26 修复
+- 🐛 requirements.txt 写了 em-dash `—`，Windows pip 用 GBK 解码报 `UnicodeDecodeError`，换成 ASCII
+- 🐛 pyannote.audio 4.0.4 声明 `torch>=2.8` + `torchcodec>=0.7`；torchcodec DLL 在 Windows 加载不了，但 `asr.py` 用 PyAV 预解码绕开了，仅 warning 不影响功能
+
+**(2026-04-22) CUDA 栈现状（venv 内）**：
+- `torch/lib/cublas64_12.dll` + cudnn/cufft/curand/nvrtc（~4GB，torch bundle）
+- `ctranslate2/cudnn64_9.dll`（CTranslate2 自带）
+- Ollama 独立 bundle（~5GB，系统路径）
+- 三家各自 bundle，互不共享；只有 CTranslate2 靠 PATH hack 复用 torch 的 cublas
+
+**(2026-04-22) Pipeline 计时**：
+- ✅ `pipeline.py` 每阶段加 `time.perf_counter()`，控制台打印 + JSON `stats.timings` 字段
+- 实测 30min 音频：ASR 63s / Diarization 67s / Classify 586s / **Total 717s**（比基准 480s 慢 49%，主要是分类每句 2.7s 偏慢）
+
+**(2026-04-22) Whisper 幻觉排查**：
+- 30min 康复录音出现 `Okay.` / `Ice.` 逐秒反复幻觉（静音段或背景音段），之前测 `test.m4a` 从没见过
+- 试 `vad_filter=True`（min_silence_duration_ms=500）→ 把部分真实短指令也过滤掉了，**还原**
+- 根因分析：**GPU 非确定性**（atomicAdd / cuDNN 算法选择）+ `condition_on_previous_text=True` 自反馈放大 → 静音段 beam search 临界点翻盘；运行间结果不稳定（两次跑同音频，一次全幻觉一次正常）
+- cuBLAS 版本变化不是主因（版本差异是确定性的，但你看到的是非确定性）
+- 缓解方案：`condition_on_previous_text=False` + `torch.backends.cudnn.deterministic=True`（未测副作用，暂不改；P6 chunk + VAD 架构会天然规避静音幻觉）
+- 暂搁置，在 CLAUDE.md "已知问题" 里记了一条
