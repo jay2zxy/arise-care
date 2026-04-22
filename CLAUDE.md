@@ -17,7 +17,7 @@
 
 ---
 
-## 项目状态（截至 2026-04-17）
+## 项目状态（截至 2026-04-22）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
@@ -26,10 +26,78 @@
 | P3 | 完整 Pipeline + 统计报告 | ✅ 完成 |
 | P4 | 前端完善（UI/导出/历史/Cancel） | ✅ 完成 |
 | P5 | Pipeline 评估 + GPU 加速 + 重叠匹配 | ✅ 完成 |
-| P6 | Pipeline 优化（进度追踪/分类加速/子句拆分） | ⬜ 待做 |
-| P7 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
-| P8 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
-| P9 | 打包分发（Tauri 桌面 + 移动端 API） | ⬜ 待开始 |
+| P6 | 实时标注（边说边出结果，chunked streaming） | ⬜ 进行中 |
+| P7 | Pipeline 优化（进度追踪/分类加速/子句拆分） | ⬜ 待做 |
+| P8 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
+| P9 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
+| P10 | 打包分发（Tauri 桌面 + 移动端 API） | ⬜ 待开始 |
+
+### P6 实时标注设计要点
+
+**数据流**
+```
+MediaRecorder (chunk ~3–5s)
+  → WebSocket /api/stream (binary)
+  → faster-whisper transcribe (sync, ~0.5s/chunk)
+  → speaker verification（ECAPA embedding cos sim vs 开场 enrollment）
+  → 非 therapist：transcript 显示即可
+  → therapist：入分类队列 → Ollama 异步分类
+  → WebSocket 推回 {utterance_id, cls}
+```
+
+**说话人识别：Enrollment + Verification（不走在线 pyannote）**
+- **不用在线 pyannote 的原因**：pyannote 是全局聚类器，标签不跨 chunk 对齐（chunk1 的 SPEAKER_00 可能 ≠ chunk2 的 SPEAKER_00），且需要攒够数据才稳定
+- **Enrollment（不是训练）**：用预训练的冻结 speaker encoder（ECAPA-TDNN，`pyannote/embedding` 或 `resemblyzer`），把开场 ~8s therapist 音频过一遍拿到参考向量
+- **Verification**：每句 ASR 出来后切对应音频 → 提 embedding → 与参考向量算 cosine，过阈值（0.65–0.75）即 therapist
+- **稳定性增强**：用 running average 在高置信句子上持续更新 therapist 向量，抗声音状态变化
+- **预期精度**：二分类 EER 2–12%（取决于音质），通常 ≥ pyannote 离线 DER，且没有标签漂移问题
+- **兜底**：录完后可选跑一遍离线完整 pipeline，覆盖实时结果用于最终报告
+
+**采集与延迟**
+- 浏览器 MediaRecorder 分 chunk 录，每 chunk 是完整 WebM/Opus blob（stop/start 方式避免 EBML header 问题）
+- 服务端对每 chunk 用 PyAV 读 duration，累积 elapsed 作为 utterance 时间戳基准
+- 端到端延迟预算：chunk 3s + ASR 0.5s + classify 2s ≈ 5.5s 可见分类结果
+
+**UI**
+- 新增 "Live" 页，保留原 Upload 页不变
+- 流程：点 Start → 弹出"请说几句话做 enrollment（8s）" → 正式录音 → transcript 流式追加，badge 先显示 `…` 占位、分类完成后替换
+- 统计面板边说边刷新（沿用现有 Directed/Guided 统计口径）
+
+**GPU 共存**
+- Whisper（small/fp16 ~2GB）+ pyannote-embedding（~200MB）+ Ollama qwen-bala（5.2GB）总计 ~7.5GB，当前显存够
+- 代码不做显式调度，OOM 再加：Ollama 请求带 `keep_alive: 0` 分类完立即卸载
+
+**里程碑**
+
+| | 内容 | 状态 |
+|---|---|---|
+| M1 | 后端 WS + ASR + 异步分类（全语音当 therapist） | 🟡 骨架 |
+| M2 | 前端 Live 页 + MediaRecorder 分片 + 流式 UI | ⬜ |
+| M3 | Enrollment + speaker verification | ⬜ |
+| M4 | 离线兜底（录完可选跑 `/api/analyze` 覆盖结果） | ⬜ |
+| M5 | 延迟/稳定性打磨 | ⬜ |
+| M6 | `/api/analyze` 改 WS：推进度 + 前端健康检测（复用 M1 基础设施） | ⬜ |
+
+**WS 消息协议（`/api/stream`）**
+
+Client → Server：binary frame = 完整 WebM/Opus chunk；`"stop"` 结束会话；后续加 `{type:"enrollment_start|enrollment_done"}`（M3）
+
+Server → Client（JSON）：
+```
+{type:"utterance",       id, start, end, text, speaker?}
+{type:"classification",  id, cls:"DIRECTED|GUIDED|NONE"}
+{type:"error",           message}
+```
+
+**已知坑**
+- MediaRecorder codec 不一致：Chrome `webm/opus`，Safari 只支持 `mp4`，需 mimeType 协商
+- Enrollment 开场 8s 若有噪声参考向量偏，UI 上要提示 + 简单 VAD 剔除静音
+- Whisper + Ollama + pyannote-embedding 常驻 ≈ 7.5GB，8GB 显存紧张
+
+**待确认**
+- chunk 长度（3s 延迟低但每 chunk 信息少，5s 反之）
+- enrollment 失败/中途切换 therapist 如何处理
+- 单麦 vs 双麦（双麦可跳过 enrollment，走通道区分）
 
 ---
 
@@ -177,12 +245,14 @@ uvicorn app.main:app --reload
 ## 已知问题 / 坑
 
 - 🐛 短指令误判：短指令（"breathe"、"right here"）在 Whisper 长句中被淹没标为 NONE，改 prompt 无效，需 post-ASR 子句拆分或补充训练数据
+- 🐛 Whisper 静音段幻觉（"Okay." / "Ice." 反复逐秒输出）：GPU 非确定性 + `condition_on_previous_text=True` 自反馈放大；运行间结果不稳定。缓解方案 `condition_on_previous_text=False` + `cudnn.deterministic=True`，但未测副作用，暂不改。P6 chunk + VAD 架构会天然规避
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
-- ⚠️ faster-whisper GPU 已启用（pip nvidia-cublas-cu12，asr.py 动态加载 DLL）
-- ⚠️ PyTorch 已切换为 GPU 版（torch 2.4.1+cu121），pyannote GPU 可用（58s vs CPU 28 分钟）
-- ⚠️ torch 版本降级到 2.4.1（pyannote 要求 >=2.8 但实际可用）
-- ✅ CTranslate2 + PyTorch CUDA 在 uvicorn 进程中可共存（测试脚本中会冲突，但 FastAPI 服务正常）
-- ⚠️ torchcodec 在 Windows 不可用，已卸载，音频解码走 PyAV
+- ✅ faster-whisper GPU 已启用；`asr.py` 把 `torch/lib/` 加进 PATH 让 CTranslate2 复用 torch bundle 的 `cublas64_12.dll`（Windows 无 RPATH）。不再需要 `nvidia-cublas-cu12` pip 包
+- ✅ torch 升到 `2.8.0+cu126`（驱动 CUDA 13.2 向下兼容），满足 pyannote 4.0.4 的 `torch>=2.8` 要求；CTranslate2 4.7.1 + torch 2.8 共存验证通过
+- ✅ CTranslate2 + PyTorch CUDA 在 uvicorn 进程中可共存
+- ⚠️ torchcodec 被 pyannote 4.0.4 列为必需依赖，但 DLL 在 Windows 加载不了；`asr.py` 用 PyAV 预解码绕过，仅 warning 不影响功能
+- ⚠️ pip 23 解析 pyannote 依赖树会 OOM，venv 重建前需先 `pip install --upgrade pip`（>= 24）
+- ⚠️ `requirements.txt` 不能含非 ASCII 字符（Windows pip 按 GBK 解码会报错）
 - GPU 显存分配：Ollama 5.2GB + Whisper + pyannote 不能同时跑，需分时复用（Whisper → 释放 → pyannote → 释放 → Ollama）
 - ⏱️ 30 分钟音频全 GPU pipeline 耗时 ~8 分钟（Whisper ~55s + pyannote ~58s + Ollama 分类 ~400s），分类占 80%+
 - speaker 对齐用中点匹配（asr.py:91），GPU pyannote 已消除所有 UNKNOWN 标签

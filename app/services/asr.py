@@ -1,10 +1,10 @@
 import os
 
 try:
-    import nvidia.cublas
-    _cublas_bin = os.path.join(nvidia.cublas.__path__[0], "bin")
-    if os.path.isdir(_cublas_bin):
-        os.environ["PATH"] = _cublas_bin + os.pathsep + os.environ.get("PATH", "")
+    import torch
+    _torch_lib = os.path.join(os.path.dirname(torch.__file__), "lib")
+    if os.path.isdir(_torch_lib):
+        os.environ["PATH"] = _torch_lib + os.pathsep + os.environ.get("PATH", "")
 except ImportError:
     pass
 
