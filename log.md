@@ -194,3 +194,29 @@
 
 **Session 7 明日计划**：
 - ⬜ P6 M2：前端 Live 页 + MediaRecorder 分片 + WS 流式 UI
+
+### 2026-04-23 - Session 7: P6 M2 Live 页
+
+**完成**：
+- ✅ 前端 Live 页：nav item + 控制按钮 + stream 面板 CSS
+- ✅ MediaRecorder stop/start 循环（3s/chunk，每次 new 一个 recorder → 每个 blob 都是完整 WebM/Opus 含 EBML header）
+- ✅ WebSocket 连 `/api/stream`：`utterance` 先占位 `…`、`classification` 回来按 id 替换 badge、实时 Directed/Guided 统计
+- ✅ 增量 DOM patch：新句子 `insertAdjacentHTML` 追加；分类结果只 swap 那个 badge 的 innerHTML；不再全量重建（不闪烁、不丢选区、O(n) 而非 O(n²)）
+
+**踩坑**：
+- 🐛 uvicorn 启动看到 `No supported WebSocket library detected` + `/api/stream` 返 404 → 缺 `websockets` 包；装上 + 写进 requirements.txt
+- 🐛 静音段 Whisper 幻觉 "Thank you." 逐个 chunk 狂吐 → 开 `vad_filter=True`（Silero VAD + `min_silence_duration_ms=500`）治好；只在 streaming 路径开，离线 pipeline 保持原样（已评估 68.2%，不盲改）
+- ⚠️ ffmpeg `Error parsing Opus packet header` 是 warning 不 fatal，功能正常
+- ⚠️ Stop 时最后一个 chunk 的分类用 4s grace 等待，GPU 忙时仍可能丢最后 1-2 条（M5 做 drain ack）
+
+**架构讨论**：
+- 用户问"现在前端规模适合上 React 吗"→ 结论：不上
+  - 刚进入"收益≥成本"临界区，但 Tauri 打包方向未定，暂不迁
+  - Live 流式重建问题用 20 行增量 patch 解决，不用框架
+  - React 的 VDOM diff 自然解决此类问题，但 vanilla 手动 patch 等价且无构建链
+
+**M2 之后**：
+- 🟡 M2 代码完成待真机验证（用户会测）
+- ⬜ **M3**（核心，非打磨）：ECAPA enrollment + speaker verification，否则患者语音也被分类成 DIRECTED
+- ⬜ M4：离线兜底（录完可选跑 `/api/analyze` 覆盖）
+- ⬜ M5：stop drain ack / Safari 实测 / VAD 参数微调

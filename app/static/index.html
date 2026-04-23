@@ -266,6 +266,35 @@
     .model-picker-item .tag { font-size: 0.68rem; color: #888; padding: 1px 6px; border: 1px solid #444; border-radius: 3px; }
     .model-picker-empty { padding: 12px; font-size: 0.82rem; color: #666; text-align: center; }
 
+    /* ── Live page ─────────────────────────────────── */
+    .live-controls {
+      display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .live-status {
+      display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #888;
+    }
+    .live-dot {
+      width: 10px; height: 10px; border-radius: 50%; background: #555;
+    }
+    .live-dot.recording {
+      background: #f87171; animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(248,113,113,0.5); }
+      50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(248,113,113,0); }
+    }
+    .live-stream {
+      background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px;
+      padding: 16px 20px; min-height: 200px; max-height: 56vh; overflow-y: auto;
+    }
+    .live-stream::-webkit-scrollbar { width: 6px; }
+    .live-stream::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+    .live-empty { color: #555; font-size: 0.88rem; text-align: center; padding: 40px 0; }
+    .live-placeholder {
+      display: inline-block; min-width: 60px; padding: 3px 10px; border-radius: 4px;
+      background: #2a2a2a; color: #666; font-size: 0.75rem; text-align: center;
+    }
+
     /* ── Mobile menu buttons ───────────────────────── */
     .menu-btn {
       width: 40px; height: 40px; border-radius: 10px; border: none; background: #2a2a2a;
@@ -329,6 +358,10 @@
     <div class="nav-item" data-page="analyze" onclick="switchPage('analyze')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       Session Analysis
+    </div>
+    <div class="nav-item" data-page="live" onclick="switchPage('live')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+      Live
     </div>
     <div class="nav-item" data-page="history" onclick="switchPage('history')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
@@ -442,6 +475,30 @@
     </div>
   </div>
 
+  <!-- Page: Live -->
+  <div class="content-area hidden" id="page-live">
+    <div class="page-title">Live session</div>
+
+    <div class="live-controls">
+      <button class="btn" id="liveStartBtn" onclick="startLive()">● Start Recording</button>
+      <button class="btn btn-cancel hidden" id="liveStopBtn" onclick="stopLive()">■ Stop</button>
+      <div class="live-status">
+        <div class="live-dot" id="liveDot"></div>
+        <span id="liveStatusText">Idle</span>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span>Transcript (live)</span>
+      <span style="text-transform:none; color:#555; font-size:0.7rem;">
+        All speech currently treated as therapist (enrollment coming in M3)
+      </span>
+    </div>
+    <div class="live-stream" id="liveStream">
+      <div class="live-empty">Click Start to begin streaming transcription.</div>
+    </div>
+  </div>
+
   <!-- Page: History -->
   <div class="content-area hidden" id="page-history">
     <div class="page-title">Session history</div>
@@ -526,16 +583,20 @@
   function switchPage(name) {
     document.querySelectorAll('.nav-item[data-page]').forEach(n =>
       n.classList.toggle('active', n.dataset.page === name));
-    ['classify', 'analyze', 'history'].forEach(p =>
+    ['classify', 'analyze', 'live', 'history'].forEach(p =>
       document.getElementById('page-' + p).classList.toggle('hidden', p !== name));
 
-    const titles = { classify: 'Text Classify', analyze: 'Session Analysis', history: 'History' };
+    const titles = {
+      classify: 'Text Classify', analyze: 'Session Analysis',
+      live: 'Live', history: 'History',
+    };
     document.getElementById('topbarTitle').textContent = titles[name];
 
     // show bottom bar only on classify page
     document.getElementById('bottomBar').classList.toggle('hidden', name !== 'classify');
 
     if (name === 'history') renderSessionList();
+    if (name === 'live') renderLiveStats();
     closeSidebars();
   }
 
@@ -1061,6 +1122,201 @@
   }
 
   loadModelConfig();
+
+  // ── Live Streaming ───────────────────────────────────
+  const CHUNK_MS = 3000;
+  const MIME_CANDIDATES = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+  ];
+
+  let liveWS = null;
+  let liveRecorder = null;
+  let liveStream = null;
+  let liveChunkTimer = null;
+  let liveRecording = false;
+  let liveMime = '';
+  const liveSegments = [];  // {id, start, end, text, cls?}
+  const liveCounts = { DIRECTED: 0, GUIDED: 0, NONE: 0 };
+
+  function pickMime() {
+    for (const m of MIME_CANDIDATES) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+    }
+    return '';
+  }
+
+  function setLiveStatus(text, recording) {
+    document.getElementById('liveStatusText').textContent = text;
+    document.getElementById('liveDot').classList.toggle('recording', !!recording);
+    document.getElementById('liveStartBtn').classList.toggle('hidden', !!recording);
+    document.getElementById('liveStopBtn').classList.toggle('hidden', !recording);
+  }
+
+  async function startLive() {
+    if (liveRecording) return;
+    liveMime = pickMime();
+    if (!liveMime) { showToast('Browser does not support any compatible audio recording format'); return; }
+
+    try {
+      liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      showToast('Microphone permission denied or unavailable: ' + e.message);
+      return;
+    }
+
+    // reset state
+    liveSegments.length = 0;
+    liveCounts.DIRECTED = 0; liveCounts.GUIDED = 0; liveCounts.NONE = 0;
+    resetLiveStream();
+    renderLiveStats();
+
+    // open WebSocket
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    liveWS = new WebSocket(`${proto}://${location.host}/api/stream`);
+    liveWS.onmessage = onLiveMessage;
+    liveWS.onclose = () => { if (liveRecording) stopLive(); };
+
+    try {
+      await new Promise((resolve, reject) => {
+        liveWS.onopen = resolve;
+        liveWS.onerror = () => reject(new Error('connection failed'));
+        setTimeout(() => reject(new Error('connect timeout')), 5000);
+      });
+    } catch (e) {
+      showToast('Cannot connect to server: ' + e.message);
+      teardownLive();
+      return;
+    }
+
+    // restore a session-level error handler
+    liveWS.onerror = () => showToast('WebSocket error');
+
+    liveRecording = true;
+    setLiveStatus('Recording…', true);
+    startRecorderCycle();
+  }
+
+  // Start/stop cycle: each cycle produces a complete WebM blob with EBML header.
+  // Using timeslice on a single recorder would give us incomplete chunks after the first.
+  function startRecorderCycle() {
+    if (!liveRecording) return;
+
+    try {
+      liveRecorder = new MediaRecorder(liveStream, { mimeType: liveMime });
+    } catch (e) {
+      showToast('MediaRecorder failed: ' + e.message);
+      stopLive();
+      return;
+    }
+
+    const blobs = [];
+    liveRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) blobs.push(e.data); };
+    liveRecorder.onstop = async () => {
+      const blob = new Blob(blobs, { type: liveMime });
+      if (blob.size > 0 && liveWS && liveWS.readyState === WebSocket.OPEN) {
+        const buf = await blob.arrayBuffer();
+        liveWS.send(buf);
+      }
+      if (liveRecording) startRecorderCycle();
+    };
+
+    liveRecorder.start();
+    liveChunkTimer = setTimeout(() => {
+      if (liveRecorder && liveRecorder.state === 'recording') liveRecorder.stop();
+    }, CHUNK_MS);
+  }
+
+  function stopLive() {
+    if (!liveRecording) return;
+    liveRecording = false;
+    setLiveStatus('Finishing…', false);
+
+    clearTimeout(liveChunkTimer);
+    if (liveRecorder && liveRecorder.state === 'recording') {
+      // Will flush last chunk via onstop; won't restart cycle (flag already false)
+      liveRecorder.stop();
+    }
+
+    // Keep WS open briefly so backend can transcribe + classify the final chunk.
+    // Ollama classification is ~2s per utterance; 4s covers typical tail.
+    setTimeout(() => {
+      teardownLive();
+      setLiveStatus('Idle', false);
+    }, 4000);
+  }
+
+  function teardownLive() {
+    if (liveStream) {
+      liveStream.getTracks().forEach(t => t.stop());
+      liveStream = null;
+    }
+    if (liveWS) {
+      try { liveWS.close(); } catch {}
+      liveWS = null;
+    }
+    liveRecorder = null;
+  }
+
+  function onLiveMessage(ev) {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+
+    if (msg.type === 'utterance') {
+      const seg = { id: msg.id, start: msg.start, end: msg.end, text: msg.text };
+      liveSegments.push(seg);
+      appendLiveSegment(seg);
+    } else if (msg.type === 'classification') {
+      const seg = liveSegments.find(s => s.id === msg.id);
+      if (!seg) return;
+      seg.cls = msg.cls;
+      if (liveCounts[msg.cls] !== undefined) liveCounts[msg.cls]++;
+      updateLiveBadge(msg.id, msg.cls);
+      renderLiveStats();
+    } else if (msg.type === 'error') {
+      showToast('Stream error: ' + msg.message);
+    }
+  }
+
+  function resetLiveStream() {
+    document.getElementById('liveStream').innerHTML =
+      '<div class="live-empty">Listening…</div>';
+  }
+
+  function appendLiveSegment(seg) {
+    const el = document.getElementById('liveStream');
+    const empty = el.querySelector('.live-empty');
+    if (empty) empty.remove();
+
+    const atBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 40;
+    el.insertAdjacentHTML('beforeend', `
+      <div class="segment therapist-row" data-uid="${seg.id}">
+        <div class="seg-time">${fmt(seg.start)} – ${fmt(seg.end)}</div>
+        <div class="seg-text">${esc(seg.text)}</div>
+        <div class="seg-badge"><span class="live-placeholder">…</span></div>
+      </div>`);
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  }
+
+  function updateLiveBadge(id, cls) {
+    const badge = document.querySelector(`#liveStream [data-uid="${id}"] .seg-badge`);
+    if (badge) badge.innerHTML = `<span class="badge ${cls}">${cls}</span>`;
+  }
+
+  function renderLiveStats() {
+    const dgTotal = liveCounts.DIRECTED + liveCounts.GUIDED;
+    const dPct = dgTotal > 0 ? Math.round(liveCounts.DIRECTED / dgTotal * 1000) / 10 : 0;
+    const gPct = dgTotal > 0 ? Math.round(liveCounts.GUIDED / dgTotal * 1000) / 10 : 0;
+
+    document.getElementById('statsMeta').innerHTML = `Live session · ${dgTotal} cues`;
+    document.getElementById('statD').textContent = `${dPct}% (${liveCounts.DIRECTED})`;
+    document.getElementById('statG').textContent = `${gPct}% (${liveCounts.GUIDED})`;
+    document.getElementById('miniBar').innerHTML =
+      `<div class="seg-d" style="width:${dPct}%"></div>` +
+      `<div class="seg-g" style="width:${gPct}%"></div>`;
+    document.getElementById('statsPanel').classList.remove('hidden');
+  }
 
   // ── Helpers ──────────────────────────────────────────
   const COLORS = ['#60a5fa', '#a78bfa', '#34d399', '#f472b6', '#facc15'];

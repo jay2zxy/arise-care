@@ -49,7 +49,7 @@ class StreamSession:
 
         try:
             duration = _audio_duration(tmp.name)
-            segments = await asyncio.to_thread(transcribe, tmp.name)
+            segments = await asyncio.to_thread(transcribe, tmp.name, vad_filter=True)
 
             chunk_start = self.elapsed
             for seg in segments:

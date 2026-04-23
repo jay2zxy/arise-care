@@ -17,7 +17,7 @@
 
 ---
 
-## 项目状态（截至 2026-04-22）
+## 项目状态（截至 2026-04-23）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
@@ -26,7 +26,7 @@
 | P3 | 完整 Pipeline + 统计报告 | ✅ 完成 |
 | P4 | 前端完善（UI/导出/历史/Cancel） | ✅ 完成 |
 | P5 | Pipeline 评估 + GPU 加速 + 重叠匹配 | ✅ 完成 |
-| P6 | 实时标注（边说边出结果，chunked streaming） | ⬜ 进行中 |
+| P6 | 实时标注（边说边出结果，chunked streaming） | 🟡 M1/M2 完成，M3 待做 |
 | P7 | Pipeline 优化（并发分类 / 子句拆分 / 进度追踪） | ⬜ 待做 |
 | P8 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
 | P9 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
@@ -71,8 +71,8 @@ MediaRecorder (chunk ~3–5s)
 
 | | 内容 | 状态 |
 |---|---|---|
-| M1 | 后端 WS + ASR + 异步分类（全语音当 therapist） | 🟡 骨架 |
-| M2 | 前端 Live 页 + MediaRecorder 分片 + 流式 UI | ⬜ |
+| M1 | 后端 WS + ASR + 异步分类（全语音当 therapist） | ✅ |
+| M2 | 前端 Live 页 + MediaRecorder 分片 + 流式 UI | ✅ 跑通（截图验证 utterance + badge 替换 + VAD 治幻觉） |
 | M3 | Enrollment + speaker verification | ⬜ |
 | M4 | 离线兜底（录完可选跑 `/api/analyze` 覆盖结果） | ⬜ |
 | M5 | 延迟/稳定性打磨 | ⬜ |
@@ -249,7 +249,9 @@ uvicorn app.main:app --reload
 ## 已知问题 / 坑
 
 - 🐛 短指令误判：短指令（"breathe"、"right here"）在 Whisper 长句中被淹没标为 NONE，改 prompt 无效，需 post-ASR 子句拆分或补充训练数据
-- 🐛 Whisper 静音段幻觉（"Okay." / "Ice." 反复逐秒输出）：GPU 非确定性 + `condition_on_previous_text=True` 自反馈放大；运行间结果不稳定。缓解方案 `condition_on_previous_text=False` + `cudnn.deterministic=True`，但未测副作用，暂不改。P6 chunk + VAD 架构会天然规避
+- 🐛 Whisper 静音段幻觉（"Okay." / "Ice." / "Thank you." 反复逐秒输出）：GPU 非确定性 + `condition_on_previous_text=True` 自反馈放大
+  - **streaming 路径已修**：`transcribe(vad_filter=True)` + Silero VAD (`min_silence_duration_ms=500`)，实测治愈
+  - **离线 pipeline 未改**：已评估 68.2%，改 VAD 可能略漏真实短指令，需重评估才动
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
 - ✅ faster-whisper GPU 已启用；`asr.py` 把 `torch/lib/` 加进 PATH 让 CTranslate2 复用 torch bundle 的 `cublas64_12.dll`（Windows 无 RPATH）。不再需要 `nvidia-cublas-cu12` pip 包
 - ✅ torch 升到 `2.8.0+cu126`（驱动 CUDA 13.2 向下兼容），满足 pyannote 4.0.4 的 `torch>=2.8` 要求；CTranslate2 4.7.1 + torch 2.8 共存验证通过

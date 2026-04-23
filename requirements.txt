@@ -2,6 +2,7 @@
 
 fastapi
 uvicorn
+websockets
 httpx
 faster-whisper
 python-multipart
