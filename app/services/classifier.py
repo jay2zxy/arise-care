@@ -1,13 +1,14 @@
 import re
 import httpx
-from config import OLLAMA_URL, OLLAMA_MODEL, TEMPERATURE, MAX_TOKENS, SYSTEM_PROMPT
+from config import OLLAMA_URL, TEMPERATURE, MAX_TOKENS, SYSTEM_PROMPT
+from app import state
 
 
 def classify(text: str) -> str:
     response = httpx.post(
         OLLAMA_URL,
         json={
-            "model": OLLAMA_MODEL,
+            "model": state.current_model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": text},
