@@ -181,3 +181,16 @@
 - cuBLAS 版本变化不是主因（版本差异是确定性的，但你看到的是非确定性）
 - 缓解方案：`condition_on_previous_text=False` + `torch.backends.cudnn.deterministic=True`（未测副作用，暂不改；P6 chunk + VAD 架构会天然规避静音幻觉）
 - 暂搁置，在 CLAUDE.md "已知问题" 里记了一条
+
+**(2026-04-22) 后指定 therapist UI（commit `e3d8754`）**：
+- 核心理念：**label 是文本属性（分类器决定），speaker 归属是 UI 属性（用户决定）**，两者解耦
+- 后端 `pipeline.py`：分类所有**非 UNKNOWN** speaker 的句子（不再只分 therapist），`classification` 字段每句都有值
+- 前端 `index.html`：
+  - 右侧面板 `Therapist Speaker` input → dropdown，分析完后从报告里检测到的 speakers 填充
+  - 每行 segment 的 speaker 标签可点（虚线下划线）→ 循环切换到下一个 speaker
+  - 任何归属变化 → 实时重算 Directed/Guided 统计，无需重跑后端
+- 代价：两人对话分类时间约 ×2；好处：切换 therapist 零等待、pyannote 误归某句可手动修
+- UNKNOWN 始终跳过（pyannote 无法归属的多为背景/噪音）
+
+**Session 7 明日计划**：
+- ⬜ P6 M2：前端 Live 页 + MediaRecorder 分片 + WS 流式 UI

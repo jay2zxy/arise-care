@@ -229,7 +229,42 @@
     /* ── Export row ─────────────────────────────────── */
     .export-row { display: flex; gap: 8px; margin-top: 16px; }
 
+    /* ── Pagination ────────────────────────────────── */
+    .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 16px; }
+    .pagination button {
+      padding: 6px 12px; background: transparent; border: 1px solid #444; color: #aaa;
+      border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 0.82rem;
+    }
+    .pagination button:hover:not(:disabled) { background: #2a2a2a; border-color: #555; color: #e3e3e3; }
+    .pagination button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .pagination-info { font-size: 0.82rem; color: #888; padding: 0 8px; display: flex; align-items: center; gap: 4px; }
+    .pagination-info input {
+      width: 44px; background: #252525; border: 1px solid #444; border-radius: 4px;
+      padding: 3px 6px; color: #e3e3e3; font-size: 0.82rem; text-align: center;
+      outline: none; font-family: inherit;
+    }
+    .pagination-info input:focus { border-color: #3b82f6; }
+    .pagination-info input::-webkit-inner-spin-button,
+    .pagination-info input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
     .hidden { display: none !important; }
+
+    /* ── Model Picker ──────────────────────────────── */
+    .model-picker {
+      position: fixed; z-index: 200; background: #252525; border: 1px solid #444;
+      border-radius: 8px; padding: 6px; min-width: 220px; max-height: 320px; overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .model-picker-item {
+      padding: 8px 12px; font-size: 0.85rem; color: #ccc; cursor: pointer; border-radius: 6px;
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .model-picker-item:hover:not(.disabled) { background: #333; color: #fff; }
+    .model-picker-item.active { background: #2d3748; color: #fff; }
+    .model-picker-item.disabled { opacity: 0.35; cursor: not-allowed; }
+    .model-picker-item .check { color: #3b82f6; font-size: 0.75rem; }
+    .model-picker-item .tag { font-size: 0.68rem; color: #888; padding: 1px 6px; border: 1px solid #444; border-radius: 3px; }
+    .model-picker-empty { padding: 12px; font-size: 0.82rem; color: #666; text-align: center; }
 
     /* ── Mobile menu buttons ───────────────────────── */
     .menu-btn {
@@ -307,9 +342,9 @@
   </div>
 
   <div class="sidebar-bottom">
-    <div class="nav-item" onclick="checkModelStatus()">
+    <div class="nav-item" id="modelPickerTrigger" onclick="openModelPicker(event)" title="Click to switch model">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m-7.07-3.93l4.24-4.24m5.66-5.66l4.24-4.24M1 12h6m6 0h6m-3.93 7.07l-4.24-4.24m-5.66-5.66L4.93 4.93"/></svg>
-      <span id="modelStatusText"><span class="status-dot online"></span>qwen-bala</span>
+      <span id="modelStatusText"><span class="status-dot online"></span><span id="modelNameInline">…</span></span>
     </div>
   </div>
 </div>
@@ -403,6 +438,7 @@
 
       <!-- Segments -->
       <div id="segmentList"></div>
+      <div id="paginationControls" class="pagination"></div>
     </div>
   </div>
 
@@ -432,7 +468,7 @@
 <!-- ═══ Right Sidebar ═══ -->
 <div class="sidebar-right">
   <div class="panel-section">
-    <div class="panel-title">qwen-bala</div>
+    <div class="panel-title" id="modelNamePanel">…</div>
     <div class="panel-subtitle">Qwen2.5-7B fine-tuned for rehabilitation utterance classification (Q5_K_M quantized)</div>
   </div>
 
@@ -462,7 +498,7 @@
 
   <div class="panel-section">
     <div class="panel-label">Pipeline</div>
-    <div class="panel-subtitle">Audio → faster-whisper (ASR) → pyannote (diarization) → qwen-bala (classify) → report</div>
+    <div class="panel-subtitle" id="pipelineDesc">Audio → faster-whisper (ASR) → pyannote (diarization) → … (classify) → report</div>
   </div>
 </div>
 
@@ -685,12 +721,15 @@
 
   let currentTherapist = null;
   let knownSpeakers = [];
+  const PAGE_SIZE = 30;
+  let currentPage = 1;
 
   function renderReport(data) {
     currentReport = data;
     const segments = data.segments;
     knownSpeakers = [...new Set(segments.map(s => s.speaker || 'UNKNOWN'))].sort();
     currentTherapist = data.stats.therapist_speaker || knownSpeakers[0];
+    currentPage = 1;
 
     const sel = document.getElementById('therapistSelect');
     sel.innerHTML = knownSpeakers.map(s =>
@@ -742,7 +781,14 @@
   }
 
   function renderSegments() {
-    document.getElementById('segmentList').innerHTML = currentReport.segments.map((seg, idx) => {
+    const segments = currentReport.segments;
+    const totalPages = Math.max(1, Math.ceil(segments.length / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageSegs = segments.slice(start, start + PAGE_SIZE);
+
+    document.getElementById('segmentList').innerHTML = pageSegs.map((seg, i) => {
+      const idx = start + i;
       const isTherapist = seg.speaker === currentTherapist;
       const cls = seg.classification;
       const speakerLabel = seg.speaker || 'UNKNOWN';
@@ -756,6 +802,38 @@
         <div class="seg-badge">${badgeHtml}</div>
       </div>`;
     }).join('');
+
+    renderPagination(totalPages);
+  }
+
+  function renderPagination(totalPages) {
+    const el = document.getElementById('paginationControls');
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <button onclick="gotoPage(1)" ${currentPage === 1 ? 'disabled' : ''}>«</button>
+      <button onclick="gotoPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+      <span class="pagination-info">
+        Page <input type="number" min="1" max="${totalPages}" value="${currentPage}"
+          onchange="jumpToPage(this.value, ${totalPages})"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();jumpToPage(this.value, ${totalPages})}"
+        /> / ${totalPages}
+      </span>
+      <button onclick="gotoPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next ›</button>
+      <button onclick="gotoPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>»</button>
+    `;
+  }
+
+  function jumpToPage(raw, totalPages) {
+    let n = parseInt(raw, 10);
+    if (isNaN(n)) n = currentPage;
+    n = Math.max(1, Math.min(totalPages, n));
+    gotoPage(n);
+  }
+
+  function gotoPage(n) {
+    currentPage = n;
+    renderSegments();
+    document.getElementById('segmentList').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function onTherapistChange() {
@@ -883,27 +961,106 @@
 
   updateNavHistory();
 
-  // ── Model Status ─────────────────────────────────────
-  async function checkModelStatus() {
-    const el = document.getElementById('modelStatusText');
+  // ── Model Config / Picker ────────────────────────────
+  let MODEL_NAME = '…';
+
+  function applyModelName(name) {
+    MODEL_NAME = name;
+    document.getElementById('modelNameInline').textContent = name;
+    document.getElementById('modelNamePanel').textContent = name;
+    document.getElementById('pipelineDesc').textContent =
+      `Audio → faster-whisper (ASR) → pyannote (diarization) → ${name} (classify) → report`;
+  }
+
+  async function loadModelConfig() {
     try {
-      const res = await fetch('/api/classify', {
+      const res = await fetch('/api/config');
+      const data = await res.json();
+      applyModelName(data.model || 'unknown');
+    } catch { applyModelName('unknown'); }
+  }
+
+  async function openModelPicker(ev) {
+    ev.stopPropagation();
+    closeModelPicker();
+
+    const nameEl = document.getElementById('modelNameInline');
+    nameEl.dataset.prev = nameEl.textContent;
+    nameEl.textContent = 'Loading…';
+    nameEl.style.opacity = '0.5';
+
+    let models;
+    try {
+      const res = await fetch('/api/models');
+      if (!res.ok) throw new Error('Ollama unreachable');
+      ({ models } = await res.json());
+    } catch (e) {
+      nameEl.textContent = nameEl.dataset.prev || MODEL_NAME;
+      nameEl.style.opacity = '';
+      showToast('Cannot reach Ollama. Is `ollama serve` running?');
+      return;
+    }
+
+    nameEl.textContent = nameEl.dataset.prev || MODEL_NAME;
+    nameEl.style.opacity = '';
+
+    const trigger = document.getElementById('modelPickerTrigger');
+    const rect = trigger.getBoundingClientRect();
+
+    const picker = document.createElement('div');
+    picker.className = 'model-picker';
+    picker.id = 'modelPicker';
+    picker.style.left = (rect.right + 8) + 'px';
+    picker.style.bottom = (window.innerHeight - rect.bottom) + 'px';
+
+    if (!models.length) {
+      picker.innerHTML = '<div class="model-picker-empty">No models installed.<br>Run <code>ollama pull &lt;name&gt;</code></div>';
+    } else {
+      picker.innerHTML = models.map(m => {
+        const isCloud = /:cloud$|-cloud$/i.test(m);
+        const isActive = m === MODEL_NAME;
+        const safe = m.replace(/'/g, "\\'");
+        if (isCloud) {
+          return `<div class="model-picker-item disabled" title="Cloud models disabled: medical data must not leave this machine">
+            <span>${esc(m)}</span>
+            <span class="tag">cloud</span>
+          </div>`;
+        }
+        return `<div class="model-picker-item ${isActive ? 'active' : ''}" onclick="selectModel('${safe}')">
+          <span>${esc(m)}</span>
+          ${isActive ? '<span class="check">✓</span>' : ''}
+        </div>`;
+      }).join('');
+    }
+
+    document.body.appendChild(picker);
+    setTimeout(() => document.addEventListener('click', closeModelPicker, { once: true }), 0);
+  }
+
+  function closeModelPicker() {
+    const p = document.getElementById('modelPicker');
+    if (p) p.remove();
+  }
+
+  async function selectModel(name) {
+    closeModelPicker();
+    if (name === MODEL_NAME) return;
+    try {
+      const res = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: 'test' }),
+        body: JSON.stringify({ model: name }),
       });
-      if (res.ok) {
-        el.innerHTML = '<span class="status-dot online"></span>qwen-bala';
-        showToast('Model is online', 'success');
-      } else {
-        el.innerHTML = '<span class="status-dot offline"></span>qwen-bala';
-        showToast('Model returned error');
-      }
-    } catch {
-      el.innerHTML = '<span class="status-dot offline"></span>qwen-bala';
-      showToast('Cannot reach Ollama');
+      if (!res.ok) throw new Error('Failed to set model');
+      const data = await res.json();
+      applyModelName(data.model);
+      showToast(`Switched to ${data.model}`, 'success');
+    } catch (e) {
+      showToast('Switch failed: ' + e.message);
     }
   }
+
+  loadModelConfig();
 
   // ── Helpers ──────────────────────────────────────────
   const COLORS = ['#60a5fa', '#a78bfa', '#34d399', '#f472b6', '#facc15'];
