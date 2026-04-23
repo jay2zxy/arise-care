@@ -27,7 +27,7 @@
 | P4 | 前端完善（UI/导出/历史/Cancel） | ✅ 完成 |
 | P5 | Pipeline 评估 + GPU 加速 + 重叠匹配 | ✅ 完成 |
 | P6 | 实时标注（边说边出结果，chunked streaming） | ⬜ 进行中 |
-| P7 | Pipeline 优化（进度追踪/分类加速/子句拆分） | ⬜ 待做 |
+| P7 | Pipeline 优化（并发分类 / 子句拆分 / 进度追踪） | ⬜ 待做 |
 | P8 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
 | P9 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
 | P10 | 打包分发（Tauri 桌面 + 移动端 API） | ⬜ 待开始 |
@@ -238,8 +238,12 @@ uvicorn app.main:app --reload
 - **分类瓶颈**：每条 utterance 独立调一次 Ollama API（system prompt + user message），200 条 × ~2s ≈ 400s，占总耗时 80%+
 - 改进方向（按优先级）：
   1. post-ASR 子句拆分（提升准确率，最有效）
-  2. 分类加速：批量打包多条 utterance 一次调用 / 蒸馏到 1.5B-3B 小模型 / 换 BERT 级分类器（毫秒级）
+  2. 分类加速：**单条 + 并发**（asyncio.gather，3-5×，准确率不变）/ 蒸馏到 1.5B-3B 小模型 / 换 BERT 级分类器（毫秒级）
   3. 补充短指令训练数据
+- 批处理 ❌ 不采纳（2026-04-23 评估）：
+  - batch=10 能 8× 加速，但 31% 的句子分类结果与单条不一致（单条自一致 100%，证明不是噪声）
+  - qwen-bala 微调数据应该是 1-in-1-out，强行批输入会改变结果分布
+  - 实时 P6 场景也天然不适合批处理
 - 详细报告：`test/report.md`
 
 ## 已知问题 / 坑
