@@ -7,6 +7,7 @@ httpx
 faster-whisper
 python-multipart
 pyannote.audio
+antlr4-python3-runtime==4.9.3
 python-dotenv
 av
 

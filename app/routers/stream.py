@@ -18,8 +18,8 @@ async def stream(ws: WebSocket):
             if "bytes" in msg and msg["bytes"] is not None:
                 await session.handle_chunk(msg["bytes"])
             elif "text" in msg and msg["text"] is not None:
-                # reserved: control frames like {"type":"stop"}
                 if msg["text"] == "stop":
+                    await session.finalize()
                     break
     except WebSocketDisconnect:
         pass

@@ -295,6 +295,43 @@
       background: #2a2a2a; color: #666; font-size: 0.75rem; text-align: center;
     }
 
+    /* Speaker chips (cluster id) */
+    .live-speaker {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 0.72rem; font-weight: 600; min-width: 28px; text-align: center;
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+    }
+    .live-speaker.S1 { background: rgba(96,165,250,0.15);  color: #60a5fa; border: 1px solid rgba(96,165,250,0.45); }
+    .live-speaker.S2 { background: rgba(251,146,60,0.15);  color: #fb923c; border: 1px solid rgba(251,146,60,0.45); }
+    .live-speaker.S3 { background: rgba(52,211,153,0.15);  color: #34d399; border: 1px solid rgba(52,211,153,0.45); }
+    .live-speaker.S4 { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.45); }
+    .live-speaker.S5 { background: rgba(250,204,21,0.15);  color: #facc15; border: 1px solid rgba(250,204,21,0.45); }
+    .live-speaker.unknown { background: #2a2a2a; color: #666; border: 1px solid #333; }
+    .seg-speaker-chip { min-width: 42px; flex-shrink: 0; padding-top: 2px; text-align: center; }
+
+    /* Speaker picker modal */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal-card {
+      background: #252525; border: 1px solid #444; border-radius: 12px; padding: 24px;
+      max-width: 620px; width: 92%; max-height: 82vh; overflow-y: auto;
+    }
+    .modal-title { font-size: 1.05rem; font-weight: 500; margin-bottom: 6px; color: #e3e3e3; }
+    .modal-subtitle { font-size: 0.82rem; color: #888; margin-bottom: 18px; line-height: 1.5; }
+    .cluster-card {
+      background: #1e1e1e; border: 1px solid #333; border-radius: 10px; padding: 14px 16px;
+      margin-bottom: 10px; display: flex; gap: 14px; align-items: flex-start;
+    }
+    .cluster-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.06); }
+    .cluster-info { flex: 1; min-width: 0; }
+    .cluster-meta { font-size: 0.85rem; color: #ccc; margin-bottom: 6px; }
+    .cluster-samples { font-size: 0.8rem; color: #888; line-height: 1.5; }
+    .cluster-samples > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
     /* ── Mobile menu buttons ───────────────────────── */
     .menu-btn {
       width: 40px; height: 40px; border-radius: 10px; border: none; background: #2a2a2a;
@@ -342,6 +379,21 @@
 <body>
 
 <div class="toast-container" id="toastContainer"></div>
+
+<!-- ═══ Speaker Picker Modal ═══ -->
+<div class="modal-backdrop" id="speakerPickerModal">
+  <div class="modal-card">
+    <div class="modal-title">Pick the therapist</div>
+    <div class="modal-subtitle">
+      We clustered speakers during the session. Pick which one is the therapist —
+      only their utterances count toward Directed/Guided stats. You can change this later.
+    </div>
+    <div id="clusterList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeSpeakerPicker()">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══ Left Sidebar ═══ -->
 <div class="sidebar-left">
@@ -482,6 +534,7 @@
     <div class="live-controls">
       <button class="btn" id="liveStartBtn" onclick="startLive()">● Start Recording</button>
       <button class="btn btn-cancel hidden" id="liveStopBtn" onclick="stopLive()">■ Stop</button>
+      <button class="btn btn-ghost btn-sm hidden" id="liveRepickBtn" onclick="reopenSpeakerPicker()">Change therapist</button>
       <div class="live-status">
         <div class="live-dot" id="liveDot"></div>
         <span id="liveStatusText">Idle</span>
@@ -491,7 +544,7 @@
     <div class="section-header">
       <span>Transcript (live)</span>
       <span style="text-transform:none; color:#555; font-size:0.7rem;">
-        All speech currently treated as therapist (enrollment coming in M3)
+        Speakers are identified after you press Stop. Pick the therapist from the picker.
       </span>
     </div>
     <div class="live-stream" id="liveStream">
@@ -529,7 +582,7 @@
     <div class="panel-subtitle">Qwen2.5-7B fine-tuned for rehabilitation utterance classification (Q5_K_M quantized)</div>
   </div>
 
-  <div class="panel-section">
+  <div class="panel-section hidden" id="therapistSelectPanel">
     <div class="panel-label">Therapist Speaker</div>
     <select class="panel-input" id="therapistSelect" onchange="onTherapistChange()" disabled>
       <option value="">(waiting for analysis)</option>
@@ -594,6 +647,8 @@
 
     // show bottom bar only on classify page
     document.getElementById('bottomBar').classList.toggle('hidden', name !== 'classify');
+    // therapist dropdown is for the offline analyze flow only
+    document.getElementById('therapistSelectPanel').classList.toggle('hidden', name !== 'analyze');
 
     if (name === 'history') renderSessionList();
     if (name === 'live') renderLiveStats();
@@ -1135,10 +1190,12 @@
   let liveRecorder = null;
   let liveStream = null;
   let liveChunkTimer = null;
+  let liveStopTimeout = null;
   let liveRecording = false;
   let liveMime = '';
-  const liveSegments = [];  // {id, start, end, text, cls?}
-  const liveCounts = { DIRECTED: 0, GUIDED: 0, NONE: 0 };
+  const liveSegments = [];  // {id, start, end, text, speaker, cls?}
+  let liveSummary = null;          // last speakers_summary clusters
+  let currentLiveTherapist = null; // selected cluster id ('S1'/...) or null
 
   function pickMime() {
     for (const m of MIME_CANDIDATES) {
@@ -1168,7 +1225,10 @@
 
     // reset state
     liveSegments.length = 0;
-    liveCounts.DIRECTED = 0; liveCounts.GUIDED = 0; liveCounts.NONE = 0;
+    liveSummary = null;
+    currentLiveTherapist = null;
+    closeSpeakerPicker();
+    document.getElementById('liveRepickBtn').classList.add('hidden');
     resetLiveStream();
     renderLiveStats();
 
@@ -1219,7 +1279,12 @@
         const buf = await blob.arrayBuffer();
         liveWS.send(buf);
       }
-      if (liveRecording) startRecorderCycle();
+      if (liveRecording) {
+        startRecorderCycle();
+      } else if (liveWS && liveWS.readyState === WebSocket.OPEN) {
+        // Last chunk delivered; tell backend to drain + push speakers_summary.
+        liveWS.send('stop');
+      }
     };
 
     liveRecorder.start();
@@ -1231,20 +1296,26 @@
   function stopLive() {
     if (!liveRecording) return;
     liveRecording = false;
-    setLiveStatus('Finishing…', false);
+    setLiveStatus('Finalizing…', false);
 
     clearTimeout(liveChunkTimer);
     if (liveRecorder && liveRecorder.state === 'recording') {
-      // Will flush last chunk via onstop; won't restart cycle (flag already false)
+      // onstop will flush the last chunk and send 'stop' to the backend.
       liveRecorder.stop();
+    } else if (liveWS && liveWS.readyState === WebSocket.OPEN) {
+      // No active recorder (already idle) — send stop directly.
+      liveWS.send('stop');
     }
 
-    // Keep WS open briefly so backend can transcribe + classify the final chunk.
-    // Ollama classification is ~2s per utterance; 4s covers typical tail.
-    setTimeout(() => {
-      teardownLive();
-      setLiveStatus('Idle', false);
-    }, 4000);
+    // Backend usually replies with speakers_summary in 1–3s after queue drains.
+    // Safety net: if it never arrives, tear down anyway.
+    liveStopTimeout = setTimeout(() => {
+      if (!liveSummary) {
+        showToast('Finalize timed out — closing stream');
+        teardownLive();
+        setLiveStatus('Idle', false);
+      }
+    }, 30000);
   }
 
   function teardownLive() {
@@ -1264,16 +1335,17 @@
     try { msg = JSON.parse(ev.data); } catch { return; }
 
     if (msg.type === 'utterance') {
-      const seg = { id: msg.id, start: msg.start, end: msg.end, text: msg.text };
+      const seg = { id: msg.id, start: msg.start, end: msg.end, text: msg.text, speaker: msg.speaker || '?' };
       liveSegments.push(seg);
       appendLiveSegment(seg);
     } else if (msg.type === 'classification') {
       const seg = liveSegments.find(s => s.id === msg.id);
       if (!seg) return;
       seg.cls = msg.cls;
-      if (liveCounts[msg.cls] !== undefined) liveCounts[msg.cls]++;
       updateLiveBadge(msg.id, msg.cls);
       renderLiveStats();
+    } else if (msg.type === 'speakers_summary') {
+      onSpeakersSummary(msg.clusters || [], msg.relabel || null);
     } else if (msg.type === 'error') {
       showToast('Stream error: ' + msg.message);
     }
@@ -1290,9 +1362,13 @@
     if (empty) empty.remove();
 
     const atBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 40;
+    const spk = seg.speaker || '?';
+    const spkClass = /^S[1-5]$/.test(spk) ? spk : 'unknown';
+    const isTherapist = currentLiveTherapist && spk === currentLiveTherapist;
     el.insertAdjacentHTML('beforeend', `
-      <div class="segment therapist-row" data-uid="${seg.id}">
+      <div class="segment ${isTherapist ? 'therapist-row' : ''}" data-uid="${seg.id}" data-speaker="${esc(spk)}">
         <div class="seg-time">${fmt(seg.start)} – ${fmt(seg.end)}</div>
+        <div class="seg-speaker-chip"><span class="live-speaker ${spkClass}">${esc(spk)}</span></div>
         <div class="seg-text">${esc(seg.text)}</div>
         <div class="seg-badge"><span class="live-placeholder">…</span></div>
       </div>`);
@@ -1305,17 +1381,118 @@
   }
 
   function renderLiveStats() {
-    const dgTotal = liveCounts.DIRECTED + liveCounts.GUIDED;
-    const dPct = dgTotal > 0 ? Math.round(liveCounts.DIRECTED / dgTotal * 1000) / 10 : 0;
-    const gPct = dgTotal > 0 ? Math.round(liveCounts.GUIDED / dgTotal * 1000) / 10 : 0;
+    const counts = { DIRECTED: 0, GUIDED: 0, NONE: 0 };
+    for (const s of liveSegments) {
+      if (!s.cls || !(s.cls in counts)) continue;
+      if (currentLiveTherapist && s.speaker !== currentLiveTherapist) continue;
+      counts[s.cls]++;
+    }
+    const dgTotal = counts.DIRECTED + counts.GUIDED;
+    const dPct = dgTotal > 0 ? Math.round(counts.DIRECTED / dgTotal * 1000) / 10 : 0;
+    const gPct = dgTotal > 0 ? Math.round(counts.GUIDED / dgTotal * 1000) / 10 : 0;
 
-    document.getElementById('statsMeta').innerHTML = `Live session · ${dgTotal} cues`;
-    document.getElementById('statD').textContent = `${dPct}% (${liveCounts.DIRECTED})`;
-    document.getElementById('statG').textContent = `${gPct}% (${liveCounts.GUIDED})`;
-    document.getElementById('miniBar').innerHTML =
-      `<div class="seg-d" style="width:${dPct}%"></div>` +
-      `<div class="seg-g" style="width:${gPct}%"></div>`;
+    const meta = currentLiveTherapist
+      ? `Live · ${currentLiveTherapist} (therapist) · ${dgTotal} cues`
+      : 'Live · pick therapist after stop';
+    document.getElementById('statsMeta').innerHTML = meta;
+
+    if (currentLiveTherapist) {
+      document.getElementById('statD').textContent = `${dPct}% (${counts.DIRECTED})`;
+      document.getElementById('statG').textContent = `${gPct}% (${counts.GUIDED})`;
+      document.getElementById('miniBar').innerHTML =
+        `<div class="seg-d" style="width:${dPct}%"></div>` +
+        `<div class="seg-g" style="width:${gPct}%"></div>`;
+    } else {
+      document.getElementById('statD').textContent = '—';
+      document.getElementById('statG').textContent = '—';
+      document.getElementById('miniBar').innerHTML = '';
+    }
     document.getElementById('statsPanel').classList.remove('hidden');
+  }
+
+  function applyTherapistHighlight() {
+    document.querySelectorAll('#liveStream [data-speaker]').forEach(row => {
+      row.classList.toggle('therapist-row', row.dataset.speaker === currentLiveTherapist);
+    });
+  }
+
+  function onSpeakersSummary(clusters, relabel) {
+    liveSummary = clusters;
+    clearTimeout(liveStopTimeout);
+    setLiveStatus('Idle', false);
+
+    // Backend done — close WS and stop the mic.
+    if (liveStream) { liveStream.getTracks().forEach(t => t.stop()); liveStream = null; }
+    if (liveWS) { try { liveWS.close(); } catch {} liveWS = null; }
+    liveRecorder = null;
+
+    // Offline reclustering may have re-assigned speakers — apply to UI.
+    if (relabel) applyRelabel(relabel);
+
+    if (!clusters.length) {
+      showToast('No speakers detected');
+      return;
+    }
+    document.getElementById('liveRepickBtn').classList.remove('hidden');
+    showSpeakerPicker(clusters);
+  }
+
+  function applyRelabel(relabel) {
+    for (const seg of liveSegments) {
+      const newSpk = relabel[seg.id];
+      if (newSpk && newSpk !== seg.speaker) seg.speaker = newSpk;
+    }
+    document.querySelectorAll('#liveStream [data-uid]').forEach(row => {
+      const uid = parseInt(row.dataset.uid, 10);
+      const seg = liveSegments.find(s => s.id === uid);
+      if (!seg) return;
+      const spk = seg.speaker || '?';
+      const spkClass = /^S[1-5]$/.test(spk) ? spk : 'unknown';
+      row.dataset.speaker = spk;
+      const chip = row.querySelector('.live-speaker');
+      if (chip) {
+        chip.className = `live-speaker ${spkClass}`;
+        chip.textContent = spk;
+      }
+    });
+    applyTherapistHighlight();
+    renderLiveStats();
+  }
+
+  function showSpeakerPicker(clusters) {
+    const list = document.getElementById('clusterList');
+    list.innerHTML = clusters.map(c => {
+      const spkClass = /^S[1-5]$/.test(c.id) ? c.id : 'unknown';
+      const isSel = c.id === currentLiveTherapist;
+      const samples = (c.samples || []).map(s => `<div>“${esc(s)}”</div>`).join('') || '<div style="color:#555;">(no sample text)</div>';
+      return `
+        <div class="cluster-card ${isSel ? 'selected' : ''}">
+          <span class="live-speaker ${spkClass}">${esc(c.id)}</span>
+          <div class="cluster-info">
+            <div class="cluster-meta">${c.count} utterances · ${Math.round(c.total_seconds)}s</div>
+            <div class="cluster-samples">${samples}</div>
+          </div>
+          <button class="btn btn-sm ${isSel ? 'btn-ghost' : ''}" onclick="pickTherapist('${esc(c.id)}')">
+            ${isSel ? 'Selected' : 'Set as therapist'}
+          </button>
+        </div>`;
+    }).join('');
+    document.getElementById('speakerPickerModal').classList.add('show');
+  }
+
+  function pickTherapist(clusterId) {
+    currentLiveTherapist = clusterId;
+    applyTherapistHighlight();
+    renderLiveStats();
+    if (liveSummary) showSpeakerPicker(liveSummary);
+  }
+
+  function reopenSpeakerPicker() {
+    if (liveSummary) showSpeakerPicker(liveSummary);
+  }
+
+  function closeSpeakerPicker() {
+    document.getElementById('speakerPickerModal').classList.remove('show');
   }
 
   // ── Helpers ──────────────────────────────────────────
