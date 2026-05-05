@@ -194,3 +194,75 @@
 
 **Session 7 明日计划**：
 - ⬜ P6 M2：前端 Live 页 + MediaRecorder 分片 + WS 流式 UI
+
+### 2026-04-23 - Session 7: P6 M2 Live 页
+
+**完成**：
+- ✅ 前端 Live 页：nav item + 控制按钮 + stream 面板 CSS
+- ✅ MediaRecorder stop/start 循环（3s/chunk，每次 new 一个 recorder → 每个 blob 都是完整 WebM/Opus 含 EBML header）
+- ✅ WebSocket 连 `/api/stream`：`utterance` 先占位 `…`、`classification` 回来按 id 替换 badge、实时 Directed/Guided 统计
+- ✅ 增量 DOM patch：新句子 `insertAdjacentHTML` 追加；分类结果只 swap 那个 badge 的 innerHTML；不再全量重建（不闪烁、不丢选区、O(n) 而非 O(n²)）
+
+**踩坑**：
+- 🐛 uvicorn 启动看到 `No supported WebSocket library detected` + `/api/stream` 返 404 → 缺 `websockets` 包；装上 + 写进 requirements.txt
+- 🐛 静音段 Whisper 幻觉 "Thank you." 逐个 chunk 狂吐 → 开 `vad_filter=True`（Silero VAD + `min_silence_duration_ms=500`）治好；只在 streaming 路径开，离线 pipeline 保持原样（已评估 68.2%，不盲改）
+- ⚠️ ffmpeg `Error parsing Opus packet header` 是 warning 不 fatal，功能正常
+- ⚠️ Stop 时最后一个 chunk 的分类用 4s grace 等待，GPU 忙时仍可能丢最后 1-2 条（M5 做 drain ack）
+
+**架构讨论**：
+- 用户问"现在前端规模适合上 React 吗"→ 结论：不上
+  - 刚进入"收益≥成本"临界区，但 Tauri 打包方向未定，暂不迁
+  - Live 流式重建问题用 20 行增量 patch 解决，不用框架
+  - React 的 VDOM diff 自然解决此类问题，但 vanilla 手动 patch 等价且无构建链
+
+**M2 之后**：
+- 🟡 M2 代码完成待真机验证（用户会测）
+- ⬜ **M3**（核心，非打磨）：ECAPA enrollment + speaker verification，否则患者语音也被分类成 DIRECTED
+- ⬜ M4：离线兜底（录完可选跑 `/api/analyze` 覆盖）
+- ⬜ M5：stop drain ack / Safari 实测 / VAD 参数微调
+
+### 2026-05-05 - Session 8: P6 M3 说话人聚类
+
+**方案三次演变**：
+1. ⏸ 原计划 enrollment + verification（开场录 8s therapist 拿参考向量）→ 用户不愿意开局配合，pass
+2. 🟡 改在线贪心余弦合并（threshold + cap=5）→ 实测自然语音很容易把一个人切多簇：首句噪声 embedding 当簇心，后续都不像，雪球分裂；用户说得越多分得越细（被 cap 强压住才止住）。GPT TTS 反倒稳——合成音色一致，cosine 总在阈值上面
+3. ✅ 当前方案：**录的时候只存 embedding（全程 `?`），按 Stop 后一次 sklearn `AgglomerativeClustering(metric=cosine, linkage=average, distance_threshold=0.7)` 全局聚类 → relabel 推前端覆盖所有 chip**。干净、准确、UI 不闪
+
+**完成**：
+- ✅ `app/services/speaker.py`：`get_embedder()` 单例 + `embed()` + `SpeakerClusterer.record()/final_cluster()`
+- ✅ `app/services/stream.py`：每 chunk 一次 PyAV 解码到 16kHz mono float32（替代之前只读 duration）；`_assign_speaker` 算 embedding + 存内存；`finalize()` 跑离线聚类后推 `speakers_summary`
+- ✅ `app/routers/stream.py`：收到 `"stop"` 文本帧时调 `session.finalize()`
+- ✅ `app/static/index.html`：speaker chip CSS（S1-S5 5 色）+ picker modal + Change therapist 按钮 + applyRelabel 重写所有 chip + filter stats by 选中簇 + 隐藏右栏 Therapist Speaker dropdown（那个是 analyze 用的）
+- ✅ `requirements.txt`：加 `antlr4-python3-runtime==4.9.3`
+
+**踩坑**：
+- 🐛 pyannote 4.0 `Inference.__init__()` 不再接受 `token` / `use_auth_token` 参数，要分两步加载：`Model.from_pretrained("pyannote/embedding", token=...)` 再 `Inference(model, window="whole")`
+- 🐛 omegaconf 2.3.0 反序列化 pyannote checkpoint 需要 `antlr4-python3-runtime==4.9.*`，pip 默认装 4.13 触发版本冲突，要显式 pin 4.9.3
+- 🐛 `pyannote/embedding` 是 HF gated repo（403 Forbidden），跟 diarization-3.1 一样要单独去 HF 网页接受条款（同 token 同账号）
+- 🐛 在线聚类阈值调来调去（0.55 → 0.30 → ...）都没用：自然语音上 ECAPA 短片段 embedding 抖动比合成音大很多，雪球效应固定存在，**根本解是改用全局凝聚聚类**
+- ⚠️ 一次跑出 4 utterance → 3 簇（用户独白 + GPT 两个声音应该 2 簇），把 `FINAL_DISTANCE_THRESHOLD` 从 0.6 调到 0.7（更愿合并）。原则：therapist 场景下过度合并 < 过度切分（合错了 picker 上点选简单，切多了选 therapist 累）
+- ⚠️ 短 utterance（<0.5s）+ chunk 边界切到的碎片 → embedding 不可靠 → 标 `?` 不参与聚类。`?` 不属于任何簇，自动被 therapist 过滤忽略，不影响统计
+- ⚠️ pyannote 加载有大量 noise（Lightning v1.2 → v2.6 自动升级 / loss_func 忽略 / TF32 关闭），全是 warning 不致命
+
+**架构决定记录（重要）**：
+- **彻底放弃在线聚类**：用户先看到错的 S1/S3 再被刷成正确的 S1/S2 反而更困惑，不如全程显示 `?` 占位，停下后一次性出真实结果。也省 CPU
+- **embedding 只算一次**：录的时候算了存内存，离线聚类直接用，不重算
+- **picker UI 与 transcript 解耦**：用户在 picker 选 therapist → 前端纯渲染，不重跑 LLM；therapist 切换零成本
+- **分类对所有 utterance 都跑**（不区分 speaker），前端按选中簇过滤——切换 therapist 不用回头补跑 Ollama
+
+**WS 协议变化**：
+- `utterance` 加 `speaker` 字段（M3 期间永远是 `?`）
+- 新增 `speakers_summary { clusters, relabel:{uid->S1/S2/...} }`，Stop 后队列清空 + 离线聚类完才推
+
+**显存**：
+- 加了 pyannote/embedding 模型 ~200MB，原本 7.2GB（Whisper + Ollama）→ 现在 7.4GB（同进程跑过 analyze 又 Live 会占两份 ECAPA → 7.6GB）
+- 8GB 卡还能装下，OOM 兜底是把 embedding 强制 CPU（utterance 级几十毫秒可接受）
+
+**M3 完成后未做**：
+- ⬜ M4 离线兜底（录完跑 `/api/analyze` 覆盖结果）
+- ⬜ M5 stop drain ack / Safari 实测 / VAD 参数
+- ⬜ M6 `/api/analyze` 改 WS 推进度
+
+**关键文件改动**：
+- 新增：`app/services/speaker.py`
+- 改：`app/services/stream.py`、`app/routers/stream.py`、`app/static/index.html`、`requirements.txt`、CLAUDE.md

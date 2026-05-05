@@ -17,7 +17,7 @@
 
 ---
 
-## 项目状态（截至 2026-04-22）
+## 项目状态（截至 2026-05-05）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
@@ -26,7 +26,7 @@
 | P3 | 完整 Pipeline + 统计报告 | ✅ 完成 |
 | P4 | 前端完善（UI/导出/历史/Cancel） | ✅ 完成 |
 | P5 | Pipeline 评估 + GPU 加速 + 重叠匹配 | ✅ 完成 |
-| P6 | 实时标注（边说边出结果，chunked streaming） | ⬜ 进行中 |
+| P6 | 实时标注（边说边出结果，chunked streaming） | 🟡 M1/M2/M3 完成，M4-M6 待做 |
 | P7 | Pipeline 优化（并发分类 / 子句拆分 / 进度追踪） | ⬜ 待做 |
 | P8 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
 | P9 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
@@ -39,29 +39,54 @@
 MediaRecorder (chunk ~3–5s)
   → WebSocket /api/stream (binary)
   → faster-whisper transcribe (sync, ~0.5s/chunk)
-  → speaker verification（ECAPA embedding cos sim vs 开场 enrollment）
-  → 非 therapist：transcript 显示即可
-  → therapist：入分类队列 → Ollama 异步分类
+  → 每条 utterance 切音频 → ECAPA embedding → 存起来（不在线聚类）
+  → utterance 推前端，speaker 字段固定 '?' 占位
+  → 同时入分类队列 → Ollama 异步分类
   → WebSocket 推回 {utterance_id, cls}
+按 Stop:
+  → 等分类队列清空
+  → sklearn AgglomerativeClustering 一次性聚类全部 embedding
+  → 推 speakers_summary { clusters, relabel:{uid->S1/S2} }
+  → 前端按 relabel 改写所有 chip + 弹 picker modal 让用户指认 therapist
 ```
 
-**说话人识别：Enrollment + Verification（不走在线 pyannote）**
-- **不用在线 pyannote 的原因**：pyannote 是全局聚类器，标签不跨 chunk 对齐（chunk1 的 SPEAKER_00 可能 ≠ chunk2 的 SPEAKER_00），且需要攒够数据才稳定
-- **Enrollment（不是训练）**：用预训练的冻结 speaker encoder（ECAPA-TDNN，`pyannote/embedding` 或 `resemblyzer`），把开场 ~8s therapist 音频过一遍拿到参考向量
-- **Verification**：每句 ASR 出来后切对应音频 → 提 embedding → 与参考向量算 cosine，过阈值（0.65–0.75）即 therapist
-- **稳定性增强**：用 running average 在高置信句子上持续更新 therapist 向量，抗声音状态变化
-- **预期精度**：二分类 EER 2–12%（取决于音质），通常 ≥ pyannote 离线 DER，且没有标签漂移问题
-- **兜底**：录完后可选跑一遍离线完整 pipeline，覆盖实时结果用于最终报告
+**说话人识别：录中只存 embedding，Stop 后一次性离线聚类**
+（演变史见 log.md Session 8：enrollment → 在线贪心 → 全离线，三次方案）
+- **算法**：
+  ```
+  录的时候每条 utterance:
+    emb = ECAPA(audio_slice)               # pyannote/embedding, 192-d, L2-normalize
+    clusterer.record(uid, emb, dur, text)  # 只存，不分组
+    speaker_label_in_message = '?'
+
+  按 Stop（finalize）:
+    labels = sklearn.cluster.AgglomerativeClustering(
+      n_clusters=None, distance_threshold=0.7,  # cosine 距离 > 0.7 不合并
+      metric='cosine', linkage='average'
+    ).fit_predict(stack(所有 embedding))
+    按时间顺序重编号 S1, S2, S3...（先出现的人是 S1）
+    返回 relabel:{uid -> S1/S2/...} + summary
+  ```
+  时间成本：N=200 ~10-30ms，跟 Stop 后等分类队列清空（1-3s）比可忽略。
+- **不用 pyannote pipeline-3.1 的原因**：是离线 batch，3 秒 chunk 单独跑标签不跨 chunk 对齐
+- **音频切片**：ASR 的 `start/end` 时间戳从原 chunk 切波形；<0.5s 跳过（embedding 不可靠），永远 `?`
+- **embedding 模型**：`pyannote/embedding`（ECAPA-TDNN, 192-d），HF gated 模型，HF token 已配；GPU 单例
+- **therapist 指认**：录完按 relabel 改 chip + 弹卡片（每簇句数/总时长/采样文本）→ 用户点 → 前端纯渲染过滤统计，零 LLM 重算
+- **分类策略**：所有 utterance 不区分 speaker 都送 Ollama，前端按选中簇过滤——切换 therapist 不用回头补跑
+- **预期精度**：近麦清晰 2-3 人聚类好；远场 / 声音相近时簇可能漂，用户在 picker 手动改
+- **兜底**：可选跑离线完整 pipeline（M4）覆盖结果
 
 **采集与延迟**
 - 浏览器 MediaRecorder 分 chunk 录，每 chunk 是完整 WebM/Opus blob（stop/start 方式避免 EBML header 问题）
-- 服务端对每 chunk 用 PyAV 读 duration，累积 elapsed 作为 utterance 时间戳基准
-- 端到端延迟预算：chunk 3s + ASR 0.5s + classify 2s ≈ 5.5s 可见分类结果
+- 服务端对每 chunk 用 PyAV 解码一次拿波形 + duration，累积 elapsed 作为 utterance 时间戳基准
+- 端到端延迟预算：chunk 3s + ASR 0.5s + 聚类 ~50ms + classify 2s ≈ 5.5s 可见分类结果（聚类几乎不增延迟）
 
 **UI**
 - 新增 "Live" 页，保留原 Upload 页不变
-- 流程：点 Start → 弹出"请说几句话做 enrollment（8s）" → 正式录音 → transcript 流式追加，badge 先显示 `…` 占位、分类完成后替换
-- 统计面板边说边刷新（沿用现有 Directed/Guided 统计口径）
+- 流程：点 Start → 直接录音（无 enrollment 步骤）→ transcript 流式追加，每条带 `S1/S2/...` 色块 + badge 先 `…` 占位、分类完成后替换
+- 录制中统计面板灰显，文案 "Pick therapist after stop"
+- 点 Stop → 状态 "Finalizing…"（等剩余分类返回，1-3 秒）→ 弹簇摘要卡片 → 用户点 "Set as therapist" → 统计填入
+- 允许重选 therapist（前端纯渲染，瞬时切换）
 
 **GPU 共存**
 - Whisper（small/fp16 ~2GB）+ pyannote-embedding（~200MB）+ Ollama qwen-bala（5.2GB）总计 ~7.5GB，当前显存够
@@ -71,33 +96,34 @@ MediaRecorder (chunk ~3–5s)
 
 | | 内容 | 状态 |
 |---|---|---|
-| M1 | 后端 WS + ASR + 异步分类（全语音当 therapist） | 🟡 骨架 |
-| M2 | 前端 Live 页 + MediaRecorder 分片 + 流式 UI | ⬜ |
-| M3 | Enrollment + speaker verification | ⬜ |
+| M1 | 后端 WS + ASR + 异步分类（全语音当 therapist） | ✅ |
+| M2 | 前端 Live 页 + MediaRecorder 分片 + 流式 UI | ✅ 跑通（截图验证 utterance + badge 替换 + VAD 治幻觉） |
+| M3 | ECAPA embedding 边录边存 + Stop 后离线凝聚聚类 + therapist 指认 UI（无在线聚类） | ✅ |
 | M4 | 离线兜底（录完可选跑 `/api/analyze` 覆盖结果） | ⬜ |
 | M5 | 延迟/稳定性打磨 | ⬜ |
 | M6 | `/api/analyze` 改 WS：推进度 + 前端健康检测（复用 M1 基础设施） | ⬜ |
 
 **WS 消息协议（`/api/stream`）**
 
-Client → Server：binary frame = 完整 WebM/Opus chunk；`"stop"` 结束会话；后续加 `{type:"enrollment_start|enrollment_done"}`（M3）
+Client → Server：binary frame = 完整 WebM/Opus chunk；`"stop"` 文本帧 = 结束会话
 
 Server → Client（JSON）：
 ```
-{type:"utterance",       id, start, end, text, speaker?}
-{type:"classification",  id, cls:"DIRECTED|GUIDED|NONE"}
-{type:"error",           message}
+{type:"utterance",         id, start, end, text, speaker:"S1|S2|...|?"}
+{type:"classification",    id, cls:"DIRECTED|GUIDED|NONE"}
+{type:"speakers_summary",  clusters:[{id, count, total_seconds, samples}], relabel:{uid->S1|S2|...}}  ← Stop 后队列清空 + 离线重聚类
+{type:"error",             message}
 ```
 
 **已知坑**
 - MediaRecorder codec 不一致：Chrome `webm/opus`，Safari 只支持 `mp4`，需 mimeType 协商
-- Enrollment 开场 8s 若有噪声参考向量偏，UI 上要提示 + 简单 VAD 剔除静音
-- Whisper + Ollama + pyannote-embedding 常驻 ≈ 7.5GB，8GB 显存紧张
+- 极短 utterance（<0.5s）/ chunk 边界碎片 → embedding 不可靠 → 标 `?` 不参与聚类（不进 therapist 统计）
+- Whisper + Ollama + pyannote-embedding 常驻 ≈ 7.4GB，8GB 显存紧张；offline analyze + Live 同进程跑过会双载 ECAPA → 7.6GB
 
 **待确认**
 - chunk 长度（3s 延迟低但每 chunk 信息少，5s 反之）
-- enrollment 失败/中途切换 therapist 如何处理
-- 单麦 vs 双麦（双麦可跳过 enrollment，走通道区分）
+- 离线聚类 distance_threshold（当前 0.7；演变历史在 log.md Session 8）
+- 单麦 vs 双麦（双麦可跳过聚类，走通道区分）
 
 ---
 
@@ -158,6 +184,8 @@ arise-care/
 │   ├── services/
 │   │   ├── classifier.py    # httpx 调用 Ollama API 分类
 │   │   ├── asr.py           # faster-whisper + pyannote diarization
+│   │   ├── speaker.py       # ECAPA embedding + 离线凝聚聚类（M3）
+│   │   ├── stream.py        # WS 会话：ASR + embedding 收集 + 异步分类 + Stop 离线聚类
 │   │   └── pipeline.py      # 编排：音频 → 转录 → 分句 → 分类 → 统计
 │   ├── models/
 │   │   └── schemas.py       # Pydantic 数据模型
@@ -225,38 +253,40 @@ uvicorn app.main:app --reload
 - 统计指标：需加每类 cue 的 `mean/min/max/range` 时长、delta proportion（干预前后对比）
 - 待确认：NONE 类是否保留、cue 边界精度（词级 vs 句级）、session 划分规则
 
-## Pipeline 评估结果（2026-04-15）
+## Pipeline 评估结果（要点）
 
-- 测试音频：30 分钟康复对话，gold standard 44 条 cue（16 GUIDED + 28 DIRECTED）
-- **Whisper + qwen-bala：68.2%**（30/44），GUIDED 81.3%，DIRECTED 60.7%
-- **AWS 文本 + qwen-bala：29.5%**（13/44），粗切分导致短指令被淹没
-- **结论：细粒度切分是关键**，Whisper 按停顿切分比 AWS 按轮次切分准确率高一倍
-- **Prompt 改进无效**：qwen-bala 是微调模型，system prompt 定义对分类行为影响极小
-- **GPU pyannote**：58 秒 vs CPU 28 分钟（30 倍加速），需 PyTorch GPU 版
-- **ASR 质量**：Whisper WER 93% vs AWS 8%（对比 gold standard），但 gold standard 文本基于 AWS 转录，对比原始音频 Whisper 实际更准确。WER 高是参照物问题，不是 Whisper 差
-- 主要问题：短指令在长句中被淹没 + 微调数据短指令样本不足
-- **分类瓶颈**：每条 utterance 独立调一次 Ollama API（system prompt + user message），200 条 × ~2s ≈ 400s，占总耗时 80%+
-- 改进方向（按优先级）：
-  1. post-ASR 子句拆分（提升准确率，最有效）
-  2. 分类加速：**单条 + 并发**（asyncio.gather，3-5×，准确率不变）/ 蒸馏到 1.5B-3B 小模型 / 换 BERT 级分类器（毫秒级）
+详细数据见 `test/report.md` 和 log.md（评估时间 2026-04-15，批处理评估 2026-04-23）。
+
+- **当前基准**：Whisper + qwen-bala 68.2%（30/44，30 分钟康复音频），GUIDED 81.3% / DIRECTED 60.7%
+- **核心结论**：细粒度切分（Whisper 按停顿）比粗切分（AWS 按轮次）准确率高一倍——短指令不能被长句淹没
+- **优化路线**（按优先级）：
+  1. post-ASR 子句拆分（最有效）
+  2. 分类加速：单条+并发 `asyncio.gather`（3-5×）/ 蒸馏到 1.5B-3B / 换 BERT 级分类器
   3. 补充短指令训练数据
-- 批处理 ❌ 不采纳（2026-04-23 评估）：
-  - batch=10 能 8× 加速，但 31% 的句子分类结果与单条不一致（单条自一致 100%，证明不是噪声）
-  - qwen-bala 微调数据应该是 1-in-1-out，强行批输入会改变结果分布
-  - 实时 P6 场景也天然不适合批处理
-- 详细报告：`test/report.md`
+- **批处理 ❌ 不走**：batch=10 能 8× 但 31% 结果跟单条不一致（qwen-bala 微调是 1-in-1-out，强行批改变分布）
+- **prompt 改进无效**：qwen-bala 是微调模型，system prompt 影响极小
+- **30min 全 GPU 耗时 ~8 分钟**：Whisper 55s + pyannote 58s + Ollama 分类 400s（占 80%+ 是瓶颈）
 
 ## 已知问题 / 坑
 
+**分类质量问题**
 - 🐛 短指令误判：短指令（"breathe"、"right here"）在 Whisper 长句中被淹没标为 NONE，改 prompt 无效，需 post-ASR 子句拆分或补充训练数据
-- 🐛 Whisper 静音段幻觉（"Okay." / "Ice." 反复逐秒输出）：GPU 非确定性 + `condition_on_previous_text=True` 自反馈放大；运行间结果不稳定。缓解方案 `condition_on_previous_text=False` + `cudnn.deterministic=True`，但未测副作用，暂不改。P6 chunk + VAD 架构会天然规避
 - 🐛 NONE 类误判：康复相关观察/评价容易被分为 GUIDED（微调数据 NONE 样本不足）
-- ✅ faster-whisper GPU 已启用；`asr.py` 把 `torch/lib/` 加进 PATH 让 CTranslate2 复用 torch bundle 的 `cublas64_12.dll`（Windows 无 RPATH）。不再需要 `nvidia-cublas-cu12` pip 包
-- ✅ torch 升到 `2.8.0+cu126`（驱动 CUDA 13.2 向下兼容），满足 pyannote 4.0.4 的 `torch>=2.8` 要求；CTranslate2 4.7.1 + torch 2.8 共存验证通过
-- ✅ CTranslate2 + PyTorch CUDA 在 uvicorn 进程中可共存
-- ⚠️ torchcodec 被 pyannote 4.0.4 列为必需依赖，但 DLL 在 Windows 加载不了；`asr.py` 用 PyAV 预解码绕过，仅 warning 不影响功能
-- ⚠️ pip 23 解析 pyannote 依赖树会 OOM，venv 重建前需先 `pip install --upgrade pip`（>= 24）
-- ⚠️ `requirements.txt` 不能含非 ASCII 字符（Windows pip 按 GBK 解码会报错）
-- GPU 显存分配：Ollama 5.2GB + Whisper + pyannote 不能同时跑，需分时复用（Whisper → 释放 → pyannote → 释放 → Ollama）
-- ⏱️ 30 分钟音频全 GPU pipeline 耗时 ~8 分钟（Whisper ~55s + pyannote ~58s + Ollama 分类 ~400s），分类占 80%+
-- speaker 对齐用中点匹配（asr.py:91），GPU pyannote 已消除所有 UNKNOWN 标签
+- 🐛 Whisper 静音段幻觉（"Okay." / "Ice." / "Thank you." 反复逐秒输出）：GPU 非确定性 + `condition_on_previous_text=True` 自反馈放大
+  - **streaming 路径已修**：`transcribe(vad_filter=True)` + Silero VAD (`min_silence_duration_ms=500`)
+  - **离线 pipeline 未改**：已评估 68.2%，改 VAD 需重评估才动
+
+**环境 / 依赖现状**
+- faster-whisper GPU 启用：`asr.py` 把 `torch/lib/` 加进 PATH 让 CTranslate2 复用 torch bundle 的 `cublas64_12.dll`（Windows 无 RPATH）
+- torch `2.8.0+cu126` + CTranslate2 4.7.1 + pyannote 4.0.4 共存验证通过
+- ⚠️ torchcodec 被 pyannote 列为必需依赖但 Windows DLL 加载不了；`asr.py` 用 PyAV 预解码绕过（warning 不影响功能）
+- ⚠️ `requirements.txt` 不能含非 ASCII 字符（Windows pip GBK 解码报错）
+- ⚠️ pip < 24 解析 pyannote 依赖树会 OOM
+- ⚠️ pyannote 模型是 HF gated repo（`speaker-diarization-3.1` + `embedding`）——每个开发者要自己 HF 账号 + 接受条款 + `HF_TOKEN`
+  - **dev 阶段**：维持现状，新成员走一遍 HF 申请
+  - **P10 分发前**：换 `speechbrain/spkrec-ecapa-voxceleb`（同 ECAPA 架构 Apache-2.0 无门槛）或 `resemblyzer`（更轻精度低），需重测聚类阈值
+
+**GPU 显存**
+- Ollama 5.2GB + Whisper 2GB + pyannote-embedding 0.2GB ≈ 7.4GB；offline + Live 同进程跑过会双载 ECAPA → 7.6GB
+- 同进程下三模型共存，但分时执行（uvicorn 单 worker 不并发，自然串行）
+- speaker 对齐用中点匹配（`asr.py:91`），GPU pyannote 已消除所有 UNKNOWN 标签

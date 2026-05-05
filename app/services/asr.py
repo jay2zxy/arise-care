@@ -59,9 +59,15 @@ def load_audio_pyav(audio_path: str) -> tuple[torch.Tensor, int]:
     return waveform, sample_rate
 
 
-def transcribe(audio_path: str) -> list[dict]:
+def transcribe(audio_path: str, vad_filter: bool = False) -> list[dict]:
     model = get_whisper_model()
-    segments, info = model.transcribe(audio_path, beam_size=5)
+    kwargs = {"beam_size": 5}
+    if vad_filter:
+        # Silero VAD drops silent regions before Whisper, preventing
+        # hallucinations like "Thank you." / "Okay." on quiet chunks.
+        kwargs["vad_filter"] = True
+        kwargs["vad_parameters"] = {"min_silence_duration_ms": 500}
+    segments, info = model.transcribe(audio_path, **kwargs)
 
     result = []
     for seg in segments:
