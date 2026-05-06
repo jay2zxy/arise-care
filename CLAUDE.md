@@ -61,11 +61,11 @@ MediaRecorder (chunk ~3–5s)
 
   按 Stop（finalize）:
     labels = sklearn.cluster.AgglomerativeClustering(
-      n_clusters=None, distance_threshold=0.7,  # cosine 距离 > 0.7 不合并
+      n_clusters=2,                       # 强制 2 簇 (1 therapist + 1 patient)
       metric='cosine', linkage='average'
     ).fit_predict(stack(所有 embedding))
-    按时间顺序重编号 S1, S2, S3...（先出现的人是 S1）
-    返回 relabel:{uid -> S1/S2/...} + summary
+    按时间顺序重编号 S1, S2（先出现的人是 S1）
+    返回 relabel:{uid -> S1/S2} + summary
   ```
   时间成本：N=200 ~10-30ms，跟 Stop 后等分类队列清空（1-3s）比可忽略。
 - **不用 pyannote pipeline-3.1 的原因**：是离线 batch，3 秒 chunk 单独跑标签不跨 chunk 对齐
@@ -73,7 +73,8 @@ MediaRecorder (chunk ~3–5s)
 - **embedding 模型**：`pyannote/embedding`（ECAPA-TDNN, 192-d），HF gated 模型，HF token 已配；GPU 单例
 - **therapist 指认**：录完按 relabel 改 chip + 弹卡片（每簇句数/总时长/采样文本）→ 用户点 → 前端纯渲染过滤统计，零 LLM 重算
 - **分类策略**：所有 utterance 不区分 speaker 都送 Ollama，前端按选中簇过滤——切换 therapist 不用回头补跑
-- **预期精度**：近麦清晰 2-3 人聚类好；远场 / 声音相近时簇可能漂，用户在 picker 手动改
+- **预期精度**：默认 1 治疗师 + 1 患者，强制 2 簇；3+ 人场景需要把 `DEFAULT_N_CLUSTERS` 调大（或后续加 UI 让用户选）
+- **⚠️ 现阶段折中**：硬指定 `n_clusters=2` 是为了规避短句 ECAPA embedding 噪声大、distance_threshold 不稳过分裂的问题（实测 8 句 → 8 簇）。后续要支持任意人数前需要换更稳的方案（如锚点+贴附两阶段，或更鲁棒的 embedding）
 - **兜底**：可选跑离线完整 pipeline（M4）覆盖结果
 
 **采集与延迟**
@@ -122,7 +123,7 @@ Server → Client（JSON）：
 
 **待确认**
 - chunk 长度（3s 延迟低但每 chunk 信息少，5s 反之）
-- 离线聚类 distance_threshold（当前 0.7；演变历史在 log.md Session 8）
+- 多人场景 `DEFAULT_N_CLUSTERS`（默认 2，未来可加 UI 让用户选 2/3）；演变历史见 log.md Session 8
 - 单麦 vs 双麦（双麦可跳过聚类，走通道区分）
 
 ---
