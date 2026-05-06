@@ -14,11 +14,11 @@ from pyannote.audio import Inference, Model
 
 MIN_DURATION = 0.5
 EMBEDDING_SR = 16000
-# Cosine distance threshold for offline agglomerative reclustering on stop.
-# distance = 1 - cos_sim; 0.7 means clusters merge while avg pairwise cos > 0.3.
-# Tuned from 0.6 -> 0.7 because typical therapy session has 2-3 acoustically distinct
-# speakers; over-splitting one person is the common failure mode, under-merging is rare.
-FINAL_DISTANCE_THRESHOLD = 0.7
+# Default speaker count. Typical session is 1 therapist + 1 patient, and short
+# utterances (<2s) produce noisy ECAPA embeddings that distance-threshold
+# clustering tends to over-split. Forcing n_clusters=2 is far more robust than
+# guessing a threshold for the 1:1 case.
+DEFAULT_N_CLUSTERS = 2
 
 _embedder: Inference | None = None
 _embedder_lock = threading.Lock()
@@ -60,10 +60,11 @@ class SpeakerClusterer:
         self.utterances.append((uid, embedding.copy(), duration, text))
 
     def final_cluster(
-        self, distance_threshold: float = FINAL_DISTANCE_THRESHOLD
+        self, n_clusters: int = DEFAULT_N_CLUSTERS
     ) -> tuple[dict[int, str], list[dict]]:
         """Run agglomerative clustering on all stored embeddings.
 
+        Forces exactly n_clusters groups (default 2 for therapist+patient).
         Returns (relabel: {uid -> 'S1'/'S2'/...}, summary: [...]).
         Cluster ids are renumbered by first-appearance order in time.
         """
@@ -71,22 +72,21 @@ class SpeakerClusterer:
             return {}, []
 
         embs = np.stack([u[1] for u in self.utterances])
-        if len(embs) == 1:
-            labels = np.array([0])
+        k = min(n_clusters, len(embs))
+        if k <= 1:
+            labels = np.zeros(len(embs), dtype=int)
         else:
             from sklearn.cluster import AgglomerativeClustering
             try:
                 model = AgglomerativeClustering(
-                    n_clusters=None,
-                    distance_threshold=distance_threshold,
+                    n_clusters=k,
                     metric="cosine",
                     linkage="average",
                 )
             except TypeError:
                 # sklearn < 1.2 used `affinity`
                 model = AgglomerativeClustering(
-                    n_clusters=None,
-                    distance_threshold=distance_threshold,
+                    n_clusters=k,
                     affinity="cosine",
                     linkage="average",
                 )
