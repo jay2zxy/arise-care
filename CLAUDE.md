@@ -170,6 +170,13 @@ Server → Client（JSON）：
 - **前端**: vanilla HTML/CSS/JS
 - **打包**: Tauri（闭源桌面应用）
 
+### 主题（明/暗切换）
+
+- 所有结构色（背景/边框/文字灰阶 + 分类色 D/G/N 含徽章底色）抽成 CSS 变量：`:root` = 暗色默认，`[data-theme="light"]` 覆盖变量值。**改前端切勿再写死十六进制色**，新颜色一律加变量。
+- 右上角按钮 `toggleTheme()` 切换 `<html data-theme>` 并存 `localStorage`；`<head>` 内有首屏脚本提前应用，防刷新闪烁。
+- 强调蓝、话者色块 S1–S5、toast 两主题通用，未变量化。
+- ⚠️ 坑：变量定义块自身含十六进制字面量，批量 `#xxx → var(--x)` 会污染定义行（自引用）。正确顺序：先抽走定义块 → 全文替换 → 再插回。
+
 ---
 
 ## 关键文件
@@ -191,7 +198,7 @@ arise-care/
 │   ├── models/
 │   │   └── schemas.py       # Pydantic 数据模型
 │   └── static/
-│       └── index.html       # 前端页面
+│       └── index.html       # 前端页面（颜色全部 CSS 变量化，见下方"主题"）
 ├── legacy/                   # Node.js 原型（参考用）
 │   ├── server.js
 │   └── index.html
@@ -266,7 +273,7 @@ uvicorn app.main:app --reload
   3. 补充短指令训练数据
 - **批处理 ❌ 不走**：batch=10 能 8× 但 31% 结果跟单条不一致（qwen-bala 微调是 1-in-1-out，强行批改变分布）
 - **prompt 改进无效**：qwen-bala 是微调模型，system prompt 影响极小
-- **30min 全 GPU 耗时 ~8 分钟**：Whisper 55s + pyannote 58s + Ollama 分类 400s（占 80%+ 是瓶颈）
+- **30min 全 GPU 耗时 ~32 分钟**：Whisper + pyannote ~160s + Ollama 串行分类 1767s（601 utterance × 2.94s/条，占 91% 是瓶颈）；P7 并发后预期 ~5-8 分钟
 
 ## 已知问题 / 坑
 
