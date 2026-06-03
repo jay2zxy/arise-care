@@ -26,7 +26,7 @@
       --text-faint: #666;
       --text-faint-2: #555;
       --text-active: #fff;       /* text on active/hover surfaces */
-      --d: #f87171; --g: #fb923c; --n: #4ade80;          /* category fg */
+      --d: #f87171; --g: #fbbf24; --n: #4ade80;          /* category fg (D=red G=amber N=green) */
       --d-bg: #450a0a; --g-bg: #422006; --n-bg: #052e16; /* category badge bg */
     }
     [data-theme="light"] {
@@ -48,8 +48,8 @@
       --text-faint: #888c94;
       --text-faint-2: #9499a1;
       --text-active: #1e40af;
-      --d: #dc2626; --g: #ea580c; --n: #16a34a;
-      --d-bg: #fde2e2; --g-bg: #fbe7cf; --n-bg: #d6f3df;
+      --d: #dc2626; --g: #ca8a04; --n: #16a34a;
+      --d-bg: #fde2e2; --g-bg: #fef3c7; --n-bg: #d6f3df;
     }
 
     body { font-family: 'Google Sans', system-ui, -apple-system, sans-serif; background: var(--surface-0); color: var(--text); height: 100vh; display: flex; overflow: hidden; transition: background 0.2s, color 0.2s; }
@@ -349,12 +349,14 @@
       font-family: 'SF Mono', 'Cascadia Code', monospace;
     }
     .live-speaker.S1 { background: rgba(96,165,250,0.15);  color: #60a5fa; border: 1px solid rgba(96,165,250,0.45); }
-    .live-speaker.S2 { background: rgba(251,146,60,0.15);  color: var(--g); border: 1px solid rgba(251,146,60,0.45); }
+    .live-speaker.S2 { background: rgba(251,146,60,0.15);  color: #fb923c; border: 1px solid rgba(251,146,60,0.45); }
     .live-speaker.S3 { background: rgba(52,211,153,0.15);  color: #34d399; border: 1px solid rgba(52,211,153,0.45); }
     .live-speaker.S4 { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.45); }
     .live-speaker.S5 { background: rgba(250,204,21,0.15);  color: #facc15; border: 1px solid rgba(250,204,21,0.45); }
     .live-speaker.unknown { background: var(--surface-hover); color: var(--text-faint); border: 1px solid var(--border); }
     .seg-speaker-chip { min-width: 42px; flex-shrink: 0; padding-top: 2px; text-align: center; }
+    .seg-speaker-chip.pickable { cursor: pointer; }
+    .seg-speaker-chip.pickable:hover .live-speaker { opacity: 0.7; }
 
     /* Speaker picker modal */
     .modal-backdrop {
@@ -601,7 +603,7 @@
     <div class="section-header">
       <span>Transcript (live)</span>
       <span style="text-transform:none; color:var(--text-faint-2); font-size:0.7rem;">
-        Speakers are identified after you press Stop. Pick the therapist from the picker.
+        Speakers are identified after you press Stop. Pick the therapist from the picker, or click any speaker chip to reassign that utterance.
       </span>
     </div>
     <div class="live-stream" id="liveStream">
@@ -1442,7 +1444,7 @@
     el.insertAdjacentHTML('beforeend', `
       <div class="segment ${isTherapist ? 'therapist-row' : ''}" data-uid="${seg.id}" data-speaker="${esc(spk)}">
         <div class="seg-time">${fmt(seg.start)} – ${fmt(seg.end)}</div>
-        <div class="seg-speaker-chip"><span class="live-speaker ${spkClass}">${esc(spk)}</span></div>
+        <div class="seg-speaker-chip" onclick="cycleLiveSpeaker(${seg.id})" title="Click to reassign speaker"><span class="live-speaker ${spkClass}">${esc(spk)}</span></div>
         <div class="seg-text">${esc(seg.text)}</div>
         <div class="seg-badge"><span class="live-placeholder">…</span></div>
       </div>`);
@@ -1528,7 +1530,40 @@
         chip.className = `live-speaker ${spkClass}`;
         chip.textContent = spk;
       }
+      row.querySelector('.seg-speaker-chip')?.classList.add('pickable');
     });
+    applyTherapistHighlight();
+    renderLiveStats();
+  }
+
+  // Available speaker labels to cycle through: cluster ids from the offline
+  // re-clustering, falling back to whatever S-labels are present.
+  function liveSpeakerOptions() {
+    if (liveSummary && liveSummary.length) return liveSummary.map(c => c.id);
+    const seen = new Set();
+    for (const s of liveSegments) if (/^S[1-5]$/.test(s.speaker)) seen.add(s.speaker);
+    return [...seen].sort();
+  }
+
+  // Click a Live transcript chip to reassign that one utterance to another
+  // speaker (mirrors cycleSpeaker() on the Upload view). No-op until Stop has
+  // produced ≥2 clusters — during recording everything is the '?' placeholder.
+  function cycleLiveSpeaker(uid) {
+    const opts = liveSpeakerOptions();
+    if (opts.length < 2) return;
+    const seg = liveSegments.find(s => s.id === uid);
+    if (!seg) return;
+    const i = opts.indexOf(seg.speaker);   // -1 when '?' → next is opts[0]
+    seg.speaker = opts[(i + 1) % opts.length];
+
+    const row = document.querySelector(`#liveStream [data-uid="${uid}"]`);
+    if (row) {
+      const spk = seg.speaker;
+      const spkClass = /^S[1-5]$/.test(spk) ? spk : 'unknown';
+      row.dataset.speaker = spk;
+      const chip = row.querySelector('.live-speaker');
+      if (chip) { chip.className = `live-speaker ${spkClass}`; chip.textContent = spk; }
+    }
     applyTherapistHighlight();
     renderLiveStats();
   }
