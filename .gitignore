@@ -10,9 +10,12 @@ venv/
 # Data & models
 data/
 *.gguf
+BERT_finetuned_final/
+*.safetensors
 
 # Papers
 paper/
+paper.pdf
 
 # IDE
 .vscode/
@@ -21,6 +24,10 @@ paper/
 # OS
 .DS_Store
 Thumbs.db
+__MACOSX/
+
+# Local scratch
+run.txt
 
 # Env
 .env
