@@ -266,3 +266,14 @@
 **关键文件改动**：
 - 新增：`app/services/speaker.py`
 - 改：`app/services/stream.py`、`app/routers/stream.py`、`app/static/index.html`、`requirements.txt`、CLAUDE.md
+
+---
+
+### 2026-06-09 - Session 9: BERT 分类后端（切换式）
+
+把团队训好的 BERT（`BERT_finetuned_final/`，437MB，gitignored）接成可切换后端：前端模型下拉选 `bert` → `classify()` 分流到 BERT，否则走 Ollama；离线 + Live 两路径同时生效，前端零改动。
+
+- **映射坑**：实际 `{0:GUIDED,1:DIRECTED,2:NONE}`，跟团队脚本 `Bert2026.py` 写的 `{NONE:0,GUIDED:1,DIRECTED:2}` 不一致（config 只有占位 LABEL_0/1/2）。一开始信脚本 + 手抄例句测，误判「模型坏了」；改用真实标注 + 穷举映射 + 列联表才反推对（已记 lessons.md）。**改标签别信 config/脚本**
+- **速度**：~8ms/句 vs qwen ~2940ms，约 360×；分类不再是瓶颈（转 ASR+diarization）
+- **精度（未定论）**：3001 gold（44 条，仅 D/G）BERT 75% > qwen 63.6%，但 n 太小，推翻不了论文 qwen 85%>BERT 77%。两后端都留，BERT 作默认候选，待更大含 NONE 的 gold 复测
+- **改动**：新增 `bert_classifier.py` + `test/{bench_bert,bert_verify,compare_models}.py`（gitignored）；改 `classifier.py`/`main.py`/`state.py`/`requirements.txt`（加 transformers）/`.gitignore`。提交 `98d8f4e` + `18e8da3`
