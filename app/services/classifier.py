@@ -5,6 +5,10 @@ from app import state
 
 
 def classify(text: str) -> str:
+    if state.current_model == state.BERT_MODEL:
+        from app.services.bert_classifier import classify as classify_bert
+        return classify_bert(text)
+
     response = httpx.post(
         OLLAMA_URL,
         json={

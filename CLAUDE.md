@@ -164,7 +164,7 @@ Server → Client（JSON）：
 ## 技术栈
 
 - **后端**: Python + FastAPI + uvicorn
-- **分类推理**: Ollama API（开发阶段，GPU 加速；打包时可换 llama-cpp-python）
+- **分类推理**: 双后端可切换 — Ollama API（qwen-bala，GPU）/ BERT（transformers 进程内，~360× 快）；前端模型下拉选 `bert` 即切，详见下方"模型 → BERT 后端"
 - **ASR**: faster-whisper（本地 Whisper）
 - **说话人分离**: pyannote.audio 4.0 + PyAV（不依赖系统 FFmpeg）
 - **前端**: vanilla HTML/CSS/JS
@@ -190,7 +190,8 @@ arise-care/
 │   │   ├── transcribe.py    # POST /api/transcribe（音频转录）
 │   │   └── pipeline.py      # POST /api/analyze（完整 pipeline）
 │   ├── services/
-│   │   ├── classifier.py    # httpx 调用 Ollama API 分类
+│   │   ├── classifier.py    # 分类入口：current_model=="bert" 走 BERT，否则 Ollama
+│   │   ├── bert_classifier.py # BERT 进程内推理（transformers）；映射 {0:G,1:D,2:NONE}
 │   │   ├── asr.py           # faster-whisper + pyannote diarization
 │   │   ├── speaker.py       # ECAPA embedding + 离线凝聚聚类（M3）
 │   │   ├── stream.py        # WS 会话：ASR + embedding 收集 + 异步分类 + Stop 离线聚类
@@ -220,6 +221,13 @@ arise-care/
 - Ollama 模型名: `qwen-bala`
 - 底层: Qwen2.5-7B-Instruct 微调 → Q5_K_M 量化 gguf（5.2GB）
 - 打包分发策略：开发用 Ollama API；未来可蒸馏到小模型（1.5B/3B ~1GB）内嵌分发
+
+### BERT 后端（2026-06-09 加，可切换，详见 log.md Session 9）
+
+- **模型** `BERT_finetuned_final/`（bert-base + 3 分类头，437MB，**gitignored**），transformers 进程内，不走 Ollama
+- **选用**：下拉选 `bert`（`current_model=="bert"` → `classify()` 分流），离线 + Live 都生效；`/api/models` 列首且 Ollama 挂了不 502
+- ⚠️ **映射** `{0:GUIDED,1:DIRECTED,2:NONE}`，跟团队脚本 `Bert2026.py` 写的不一致（config 是占位 LABEL_0/1/2）。**改标签别信 config/脚本，用 `test/compare_models.py` + 真实标注验**
+- **速度** ~360×（8ms vs 2940ms/句）；**精度未定论**：3001 gold 上 BERT 75% > qwen 63.6%（n=44 太小，不推翻论文 85%>77%）。两后端都留，BERT 默认候选
 
 ## API
 

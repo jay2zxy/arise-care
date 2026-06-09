@@ -43,13 +43,15 @@ def set_config(choice: ModelChoice):
 
 @api.get("/models")
 def list_models():
+    # BERT runs in-process, so it's always available — list it first, even if
+    # Ollama is down. Append Ollama models when reachable.
+    names = [state.BERT_MODEL]
     try:
         res = httpx.get("http://localhost:11434/api/tags", timeout=5)
-        tags = res.json().get("models", [])
-        names = [m["name"] for m in tags]
-        return {"models": names}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ollama unreachable: {e}")
+        names += [m["name"] for m in res.json().get("models", [])]
+    except Exception:
+        pass
+    return {"models": names}
 
 
 app.include_router(api)
