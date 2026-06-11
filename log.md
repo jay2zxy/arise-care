@@ -277,3 +277,15 @@
 - **速度**：~8ms/句 vs qwen ~2940ms，约 360×；分类不再是瓶颈（转 ASR+diarization）
 - **精度（未定论）**：3001 gold（44 条，仅 D/G）BERT 75% > qwen 63.6%，但 n 太小，推翻不了论文 qwen 85%>BERT 77%。两后端都留，BERT 作默认候选，待更大含 NONE 的 gold 复测
 - **改动**：新增 `bert_classifier.py` + `test/{bench_bert,bert_verify,compare_models}.py`（gitignored）；改 `classifier.py`/`main.py`/`state.py`/`requirements.txt`（加 transformers）/`.gitignore`。提交 `98d8f4e` + `18e8da3`
+
+### 2026-06-11 - Session 10: P6 重构（Live 改 Stop 后整段离线分析）
+
+放弃旧的"边录边聚类 + 边录边分类"在线方案（M1-M3），改成 **「录音中只出实时转录预览，Stop 后把整段音频走完整离线 pipeline」**。
+
+- **动机**：① 旧在线说话人识别用短切片 ECAPA + sklearn，不稳到要硬定 `n_clusters=2`，还实测过 8 句→8 簇；② 用户实测一次出了 5 个 speaker；③ 有了 BERT 后整段分类几乎瞬间，"Stop 后一次性处理"不再有延迟顾虑
+- **新数据流**：录中 PyAV 解码每 chunk → ①累积 PCM ②Whisper 转录推前端（纯预览）。Stop → `np.concatenate(PCM)` 写一个完整 WAV → `run_pipeline()`（整段 Whisper 重转 + pyannote diarize + 逐句分类）→ 推 `result`，前端复用 Upload 报告 UI + 跳 Analyze 页
+- **关键认知**：live 预览（每 3s chunk 单独转）可糙；最终报告整段重跑，**断句/用词都可能和预览不同，以最终为准**。转录/说话人/标签三者在 Stop 后基于同一批最终 segment 一次算出，无错配
+- **说话人**：现在完全是 pyannote `speaker-diarization-3.1` 做（和 Upload 同路径）；`diarize()` 加 `min_speakers=1, max_speakers=3`（`asr.py` 顶部 `MAX_SPEAKERS`），范围内自动估人数，解决"硬定 2 簇/过分裂"，封顶防跑出 5 个
+- **WS 协议变化**：`classification` + `speakers_summary` → 合并成 `result {segments,stats}`；新增 `status`（阶段进度）；`utterance` 去掉 speaker 字段
+- **改动**：重写 `stream.py`（删 ECAPA/SpeakerClusterer/分类队列/worker，加 PCM 累积 + WAV + finalize 跑 pipeline）；`pipeline.py` 加 `progress` 回调；`asr.py` 加人数约束；`routers/stream.py` 去 worker 启动；`index.html` 删实时聚类/统计/picker 一整套（~150 行），Stop 后复用 `renderReport`。`speaker.py` 弃用（死代码留参考）
+- **状态**：代码 `import app.main` 通过，**未浏览器实测**（录→停→报告 + 人数）

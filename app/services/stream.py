@@ -2,21 +2,24 @@ import asyncio
 import os
 import tempfile
 import traceback
+import wave
 
 import av
 import numpy as np
 from fastapi import WebSocket
 
 from app.services.asr import transcribe
-from app.services.classifier import classify
-from app.services.speaker import EMBEDDING_SR, MIN_DURATION, SpeakerClusterer, embed
+from app.services.pipeline import run_pipeline
+
+# Mono PCM accumulation rate. 16 kHz is Whisper-native; pyannote resamples
+# internally, so one rate serves both the live ASR preview and the final pipeline.
+SR = 16000
 
 
-def _decode_audio(path: str, target_sr: int = EMBEDDING_SR) -> tuple[np.ndarray, float]:
-    """Decode WebM/Opus chunk to mono float32 [-1, 1] at target_sr.
+def _decode_audio(path: str, target_sr: int = SR) -> tuple[np.ndarray, float]:
+    """Decode a WebM/Opus chunk to mono float32 [-1, 1] at target_sr.
 
-    Returns (audio, duration_seconds). Empty array on decode failure — caller
-    treats that as no-speaker-info and emits the utterance with speaker='?'.
+    Returns (audio, duration_seconds). Empty array on decode failure.
     """
     try:
         container = av.open(path)
@@ -39,25 +42,36 @@ def _decode_audio(path: str, target_sr: int = EMBEDDING_SR) -> tuple[np.ndarray,
     return audio, duration
 
 
+def _write_wav(samples: np.ndarray, sr: int, path: str) -> None:
+    """Write mono float32 [-1, 1] samples to a 16-bit PCM WAV."""
+    pcm16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(pcm16.tobytes())
+
+
 class StreamSession:
     """
     Per-connection streaming state.
-    Client sends audio chunks (complete WebM/Opus blobs).
-    Each chunk: ASR -> per-segment speaker clustering -> enqueue to classifier.
-    On 'stop' the route calls finalize() to drain classifications + push summary.
+
+    During recording each chunk is transcribed for a live text preview and its
+    decoded PCM is accumulated. On 'stop' finalize() stitches the full waveform
+    into a WAV and runs the offline pipeline (pyannote diarization + classify) —
+    the same proven path as /api/analyze — then pushes the final result.
+
+    No online speaker clustering or classification: those are weak on short
+    chunk-boundary clips, so all real analysis happens once at the end on the
+    complete recording.
     """
 
     def __init__(self, ws: WebSocket):
         self.ws = ws
         self.uid = 0
         self.elapsed = 0.0
-        self.queue: asyncio.Queue = asyncio.Queue()
-        self.worker: asyncio.Task | None = None
         self.closed = False
-        self.clusterer = SpeakerClusterer()
-
-    def start(self) -> None:
-        self.worker = asyncio.create_task(self._classify_worker())
+        self.pcm: list[np.ndarray] = []  # accumulated waveform for the final pipeline
 
     async def handle_chunk(self, audio_bytes: bytes) -> None:
         if not audio_bytes:
@@ -69,6 +83,8 @@ class StreamSession:
 
         try:
             audio, duration = await asyncio.to_thread(_decode_audio, tmp.name)
+            if audio.size:
+                self.pcm.append(audio)
             segments = await asyncio.to_thread(transcribe, tmp.name, vad_filter=True)
 
             chunk_start = self.elapsed
@@ -77,21 +93,13 @@ class StreamSession:
                 if not text:
                     continue
                 self.uid += 1
-                uid = self.uid
-
-                speaker = await asyncio.to_thread(
-                    self._assign_speaker, audio, seg["start"], seg["end"], text, uid
-                )
-
                 await self._send({
                     "type": "utterance",
-                    "id": uid,
+                    "id": self.uid,
                     "start": round(chunk_start + seg["start"], 2),
                     "end": round(chunk_start + seg["end"], 2),
                     "text": text,
-                    "speaker": speaker,
                 })
-                await self.queue.put((uid, text))
 
             self.elapsed += duration
         except Exception as e:
@@ -103,56 +111,41 @@ class StreamSession:
             except OSError:
                 pass
 
-    def _assign_speaker(self, audio: np.ndarray, start: float, end: float, text: str, uid: int) -> str:
-        """Embed and store for offline reclustering. Always returns '?' during streaming.
-
-        The real S1/S2/... labels are assigned in finalize() once the full set of
-        embeddings is available — agglomerative clustering on the whole session is
-        much cleaner than greedy online merging on short noisy clips.
-        """
-        duration = end - start
-        if duration < MIN_DURATION or audio.size == 0:
-            return "?"
-        s = max(0, int(start * EMBEDDING_SR))
-        e = min(len(audio), int(end * EMBEDDING_SR))
-        slice_wf = audio[s:e]
-        if slice_wf.size < int(MIN_DURATION * EMBEDDING_SR):
-            return "?"
-        try:
-            emb = embed(slice_wf, EMBEDDING_SR)
-            self.clusterer.record(uid, emb, duration, text)
-        except Exception:
-            traceback.print_exc()
-        return "?"
-
-    async def _classify_worker(self) -> None:
-        while not self.closed:
-            uid, text = await self.queue.get()
-            try:
-                cls = await asyncio.to_thread(classify, text)
-                await self._send({"type": "classification", "id": uid, "cls": cls})
-            except Exception as e:
-                traceback.print_exc()
-                await self._send({"type": "classification", "id": uid, "cls": "ERROR", "error": str(e)})
-            finally:
-                self.queue.task_done()
-
     async def finalize(self) -> None:
-        """Wait for queue drain, run offline reclustering, push speakers_summary."""
+        """Stop: write the full session to WAV, run the offline pipeline, push result."""
+        if not self.pcm:
+            await self._send({"type": "result", "segments": [], "stats": None})
+            return
+
+        loop = asyncio.get_running_loop()
+
+        def progress(msg: str) -> None:
+            # Called from the pipeline worker thread; hop back to the event loop.
+            asyncio.run_coroutine_threadsafe(
+                self._send({"type": "status", "message": msg}), loop
+            )
+
+        wav_path = None
         try:
-            await asyncio.wait_for(self.queue.join(), timeout=30.0)
-        except asyncio.TimeoutError:
-            pass
-        try:
-            relabel, summary = await asyncio.to_thread(self.clusterer.final_cluster)
-        except Exception:
+            samples = np.concatenate(self.pcm)
+            fd, wav_path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            await asyncio.to_thread(_write_wav, samples, SR, wav_path)
+            result = await asyncio.to_thread(run_pipeline, wav_path, None, progress)
+            await self._send({
+                "type": "result",
+                "segments": result["segments"],
+                "stats": result["stats"],
+            })
+        except Exception as e:
             traceback.print_exc()
-            relabel, summary = {}, []
-        await self._send({
-            "type": "speakers_summary",
-            "clusters": summary,
-            "relabel": relabel,
-        })
+            await self._send({"type": "error", "message": str(e)})
+        finally:
+            if wav_path:
+                try:
+                    os.unlink(wav_path)
+                except OSError:
+                    pass
 
     async def _send(self, payload: dict) -> None:
         if self.closed:
@@ -164,9 +157,3 @@ class StreamSession:
 
     async def close(self) -> None:
         self.closed = True
-        if self.worker:
-            self.worker.cancel()
-            try:
-                await self.worker
-            except (asyncio.CancelledError, Exception):
-                pass

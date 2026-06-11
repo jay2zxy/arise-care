@@ -26,7 +26,7 @@
 | P3 | 完整 Pipeline + 统计报告 | ✅ 完成 |
 | P4 | 前端完善（UI/导出/历史/Cancel） | ✅ 完成 |
 | P5 | Pipeline 评估 + GPU 加速 + 重叠匹配 | ✅ 完成 |
-| P6 | 实时标注（边说边出结果，chunked streaming） | 🟡 M1/M2/M3 完成，M4-M6 待做 |
+| P6 | 实时标注（重构：live 转录预览 + Stop 整段离线分析） | 🟡 重构完成待实测；旧在线聚类方案废弃 |
 | P7 | Pipeline 优化（并发分类 / 子句拆分 / 进度追踪） | ⬜ 待做 |
 | P8 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
 | P9 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
@@ -34,75 +34,62 @@
 
 ### P6 实时标注设计要点
 
-**数据流**
-```
-MediaRecorder (chunk ~3–5s)
-  → WebSocket /api/stream (binary)
-  → faster-whisper transcribe (sync, ~0.5s/chunk)
-  → 每条 utterance 切音频 → ECAPA embedding → 存起来（不在线聚类）
-  → utterance 推前端，speaker 字段固定 '?' 占位
-  → 同时入分类队列 → Ollama 异步分类
-  → WebSocket 推回 {utterance_id, cls}
-按 Stop:
-  → 等分类队列清空
-  → sklearn AgglomerativeClustering 一次性聚类全部 embedding
-  → 推 speakers_summary { clusters, relabel:{uid->S1/S2} }
-  → 前端按 relabel 改写所有 chip + 弹 picker modal 让用户指认 therapist
-```
+> **2026-06-11 重构**：放弃"边录边聚类 + 边录边分类"的在线方案（旧 M1-M3），改为
+> **「录音中只出实时转录预览，Stop 后把整段音频走完整离线 pipeline」**。
+> 理由：在线 ECAPA 短切片聚类不稳（硬定 2 簇、实测 8 句→8 簇），且有了 BERT 后整段分类
+> 已不再是瓶颈。新方案让 Live 和 Upload **共用同一条已验证的 pipeline**。旧在线方案演变史见
+> log.md Session 8 + Session 10。`app/services/speaker.py`（ECAPA + sklearn 聚类）已**弃用**（死代码，留作参考）。
 
-**说话人识别：录中只存 embedding，Stop 后一次性离线聚类**
-（演变史见 log.md Session 8：enrollment → 在线贪心 → 全离线，三次方案）
-- **算法**：
-  ```
-  录的时候每条 utterance:
-    emb = ECAPA(audio_slice)               # pyannote/embedding, 192-d, L2-normalize
-    clusterer.record(uid, emb, dur, text)  # 只存，不分组
-    speaker_label_in_message = '?'
+**数据流（新）**
+```
+录音中：
+  MediaRecorder (chunk ~3s, stop/start 出完整 WebM blob)
+    → WebSocket /api/stream (binary)
+    → 服务端 PyAV 解码 → ① 累积 PCM（攒整段）② faster-whisper(vad_filter) 转录
+    → 推 {type:utterance, id,start,end,text}  ← 纯实时预览，无 speaker / 无分类
+按 Stop（"stop" 文本帧 → finalize）：
+    → np.concatenate(累积 PCM) → 写一个完整 16kHz mono WAV
+    → run_pipeline(wav)：整段 Whisper 重转 + pyannote diarization + 逐句分类 + 统计
+    → 按阶段推 {type:status, message} （Transcribing… / Identifying speakers… / Classifying…）
+    → 推 {type:result, segments, stats}
+前端收到 result：
+    → 丢弃 live 预览，复用 Upload 的报告 UI（renderReport）→ 跳 Analyze 页 + 存 History
+```
+**关键：live 预览（每 3s chunk 单独转）只图快，可能不准（断句/用词都可能和最终不同）；
+最终报告是整段重跑，以最终为准。转录、说话人、标签三件事都在 Stop 后基于同一批最终 segment 一次算出，内部一致。**
 
-  按 Stop（finalize）:
-    labels = sklearn.cluster.AgglomerativeClustering(
-      n_clusters=2,                       # 强制 2 簇 (1 therapist + 1 patient)
-      metric='cosine', linkage='average'
-    ).fit_predict(stack(所有 embedding))
-    按时间顺序重编号 S1, S2（先出现的人是 S1）
-    返回 relabel:{uid -> S1/S2} + summary
-  ```
-  时间成本：N=200 ~10-30ms，跟 Stop 后等分类队列清空（1-3s）比可忽略。
-- **不用 pyannote pipeline-3.1 的原因**：是离线 batch，3 秒 chunk 单独跑标签不跨 chunk 对齐
-- **音频切片**：ASR 的 `start/end` 时间戳从原 chunk 切波形；<0.5s 跳过（embedding 不可靠），永远 `?`
-- **embedding 模型**：`pyannote/embedding`（ECAPA-TDNN, 192-d），HF gated 模型，HF token 已配；GPU 单例
-- **therapist 指认**：录完按 relabel 改 chip + 弹卡片（每簇句数/总时长/采样文本）→ 用户点 → 前端纯渲染过滤统计，零 LLM 重算
-- **分类策略**：所有 utterance 不区分 speaker 都送 Ollama，前端按选中簇过滤——切换 therapist 不用回头补跑
-- **预期精度**：默认 1 治疗师 + 1 患者，强制 2 簇；3+ 人场景需要把 `DEFAULT_N_CLUSTERS` 调大（或后续加 UI 让用户选）
-- **⚠️ 现阶段折中**：硬指定 `n_clusters=2` 是为了规避短句 ECAPA embedding 噪声大、distance_threshold 不稳过分裂的问题（实测 8 句 → 8 簇）。后续要支持任意人数前需要换更稳的方案（如锚点+贴附两阶段，或更鲁棒的 embedding）
-- **兜底**：可选跑离线完整 pipeline（M4）覆盖结果
+**说话人识别：pyannote 完整 pipeline 跑整段（不再自己聚类）**
+- `asr.py:diarize()` 用 `speaker-diarization-3.1`，和 Upload 同一条路径
+- **人数**：传 `min_speakers=1, max_speakers=3`（`asr.py` 顶部 `MAX_SPEAKERS=3`）。pyannote 在范围内
+  自动估人数——既解决了旧方案"硬定 2 簇/猜不准"的问题，又封顶防止过分裂跑出 5 个
+- ⚠️ 仍非完美：>3 人录音会被并进 3 个；典型 1 治疗师+1 患者场景没问题
+- **分类**：逐句 `classify(seg["text"])`，走 `state.current_model` → BERT 或 qwen 都生效（和 Upload 一致）
+- **therapist 指认**：复用 Upload 的右栏下拉 + 点击行内 speaker 重指派，无单独 picker
 
 **采集与延迟**
 - 浏览器 MediaRecorder 分 chunk 录，每 chunk 是完整 WebM/Opus blob（stop/start 方式避免 EBML header 问题）
-- 服务端对每 chunk 用 PyAV 解码一次拿波形 + duration，累积 elapsed 作为 utterance 时间戳基准
-- 端到端延迟预算：chunk 3s + ASR 0.5s + 聚类 ~50ms + classify 2s ≈ 5.5s 可见分类结果（聚类几乎不增延迟）
+- 服务端对每 chunk 用 PyAV 解码：累积 PCM（供最终 WAV）+ 累积 elapsed（供预览时间戳）
+- **Stop 后耗时**：≈ ASR + diarization（30min 音频 ~2min）+ 分类。选 **BERT** 分类几乎瞬间；选 **qwen** 长 session 会很久（2.9s/句串行）
+- 状态栏靠 `status` 消息显示进度；安全超时 10min
 
 **UI**
-- 新增 "Live" 页，保留原 Upload 页不变
-- 流程：点 Start → 直接录音（无 enrollment 步骤）→ transcript 流式追加，每条带 `S1/S2/...` 色块 + badge 先 `…` 占位、分类完成后替换
-- 录制中统计面板灰显，文案 "Pick therapist after stop"
-- 点 Stop → 状态 "Finalizing…"（等剩余分类返回，1-3 秒）→ 弹簇摘要卡片 → 用户点 "Set as therapist" → 统计填入
-- 允许重选 therapist（前端纯渲染，瞬时切换）
+- "Live" 页：点 Start → 录音 → transcript 流式追加（只「时间 + 文字」，无色块无 badge）
+- 点 Stop → 状态栏 "Finalizing… → 各阶段" → 收到 result → 自动跳 Analyze 页展示最终报告
 
 **GPU 共存**
-- Whisper（small/fp16 ~2GB）+ pyannote-embedding（~200MB）+ Ollama qwen-bala（5.2GB）总计 ~7.5GB，当前显存够
-- 代码不做显式调度，OOM 再加：Ollama 请求带 `keep_alive: 0` 分类完立即卸载
+- 新方案 Live 不再常驻 ECAPA embedding：Whisper（~2GB）+ pyannote diarization（Stop 时载）+ qwen/BERT
+- 代码不做显式调度，OOM 再加 `keep_alive: 0`
 
 **里程碑**
 
 | | 内容 | 状态 |
 |---|---|---|
-| M1 | 后端 WS + ASR + 异步分类（全语音当 therapist） | ✅ |
-| M2 | 前端 Live 页 + MediaRecorder 分片 + 流式 UI | ✅ 跑通（截图验证 utterance + badge 替换 + VAD 治幻觉） |
-| M3 | ECAPA embedding 边录边存 + Stop 后离线凝聚聚类 + therapist 指认 UI（无在线聚类） | ✅ |
-| M4 | 离线兜底（录完可选跑 `/api/analyze` 覆盖结果） | ⬜ |
-| M5 | 延迟/稳定性打磨 | ⬜ |
-| M6 | `/api/analyze` 改 WS：推进度 + 前端健康检测（复用 M1 基础设施） | ⬜ |
+| M1 | 后端 WS + ASR + 异步分类 | ✅（后被重构取代）|
+| M2 | 前端 Live 页 + MediaRecorder 分片 + 流式 UI | ✅ |
+| M3 | ECAPA 边录边存 + Stop 离线聚类 | ⛔ 废弃（在线聚类不稳，改走 pyannote 整段）|
+| **R1** | **重构：live 只转录预览 + Stop 整段走 run_pipeline（pyannote diarize + 分类）** | ✅ 代码完成，待浏览器实测 |
+| M5 | 延迟/稳定性打磨（chunk 边界丢帧、长 session 内存） | ⬜ |
+| M6 | Stop pipeline 进度推送 | 🟡 已有 status 阶段消息（粗粒度），细进度待做 |
 
 **WS 消息协议（`/api/stream`）**
 
@@ -110,21 +97,22 @@ Client → Server：binary frame = 完整 WebM/Opus chunk；`"stop"` 文本帧 =
 
 Server → Client（JSON）：
 ```
-{type:"utterance",         id, start, end, text, speaker:"S1|S2|...|?"}
-{type:"classification",    id, cls:"DIRECTED|GUIDED|NONE"}
-{type:"speakers_summary",  clusters:[{id, count, total_seconds, samples}], relabel:{uid->S1|S2|...}}  ← Stop 后队列清空 + 离线重聚类
-{type:"error",             message}
+{type:"utterance",  id, start, end, text}                  ← 录音中实时预览（无 speaker/无 cls）
+{type:"status",     message}                                ← Stop 后各阶段进度
+{type:"result",     segments:[...], stats:{...}}            ← Stop 后整段 pipeline 结果（同 /api/analyze 形状）
+{type:"error",      message}
 ```
 
 **已知坑**
 - MediaRecorder codec 不一致：Chrome `webm/opus`，Safari 只支持 `mp4`，需 mimeType 协商
-- 极短 utterance（<0.5s）/ chunk 边界碎片 → embedding 不可靠 → 标 `?` 不参与聚类（不进 therapist 统计）
-- Whisper + Ollama + pyannote-embedding 常驻 ≈ 7.4GB，8GB 显存紧张；offline analyze + Live 同进程跑过会双载 ECAPA → 7.6GB
+- stop/start 分片之间可能丢几毫秒（chunk 边界）→ 累积 PCM 有极小断点，对 Whisper 可忽略
+- 长 session 累积 PCM 占内存：30min 16kHz mono float32 ≈ 115MB，可接受；超长需考虑落盘
+- 短指令被 Whisper 揉进长句 → 易判 NONE（切句粒度问题，跟 live/offline 无关，待 P7 子句拆分）
 
 **待确认**
 - chunk 长度（3s 延迟低但每 chunk 信息少，5s 反之）
-- 多人场景 `DEFAULT_N_CLUSTERS`（默认 2，未来可加 UI 让用户选 2/3）；演变历史见 log.md Session 8
-- 单麦 vs 双麦（双麦可跳过聚类，走通道区分）
+- `MAX_SPEAKERS`（默认 3）；>3 人场景需调
+- 单麦 vs 双麦（双麦可走通道区分，跳过 diarization）
 
 ---
 
@@ -192,10 +180,10 @@ arise-care/
 │   ├── services/
 │   │   ├── classifier.py    # 分类入口：current_model=="bert" 走 BERT，否则 Ollama
 │   │   ├── bert_classifier.py # BERT 进程内推理（transformers）；映射 {0:G,1:D,2:NONE}
-│   │   ├── asr.py           # faster-whisper + pyannote diarization
-│   │   ├── speaker.py       # ECAPA embedding + 离线凝聚聚类（M3）
-│   │   ├── stream.py        # WS 会话：ASR + embedding 收集 + 异步分类 + Stop 离线聚类
-│   │   └── pipeline.py      # 编排：音频 → 转录 → 分句 → 分类 → 统计
+│   │   ├── asr.py           # faster-whisper + pyannote diarization（min/max_speakers 约束）
+│   │   ├── speaker.py       # ⛔ 弃用：旧 Live 在线 ECAPA 聚类，已无引用（留作参考）
+│   │   ├── stream.py        # WS 会话：录中只 ASR 预览 + 累积 PCM；Stop 写 WAV → run_pipeline
+│   │   └── pipeline.py      # 编排：音频 → 转录 → diarize → 分类 → 统计（progress 回调）
 │   ├── models/
 │   │   └── schemas.py       # Pydantic 数据模型
 │   └── static/
