@@ -9,7 +9,6 @@ router = APIRouter()
 async def stream(ws: WebSocket):
     await ws.accept()
     session = StreamSession(ws)
-    session.start()
     try:
         while True:
             msg = await ws.receive()
@@ -19,6 +18,7 @@ async def stream(ws: WebSocket):
                 await session.handle_chunk(msg["bytes"])
             elif "text" in msg and msg["text"] is not None:
                 if msg["text"] == "stop":
+                    # Run the full offline pipeline on the complete recording.
                     await session.finalize()
                     break
     except WebSocketDisconnect:

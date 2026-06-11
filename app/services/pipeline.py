@@ -14,19 +14,31 @@ def _detect_therapist(segments: list[dict]) -> str:
     return counts.most_common(1)[0][0]
 
 
-def run_pipeline(audio_path: str, therapist_speaker: str | None = None) -> dict:
+def run_pipeline(audio_path: str, therapist_speaker: str | None = None, progress=None) -> dict:
     """
     Full pipeline: audio → transcribe+diarize → classify therapist utterances → report.
+
+    progress: optional callable(msg) invoked at each phase boundary so callers
+    (e.g. the Live WebSocket) can stream coarse status to the UI.
     """
+    def report(msg: str) -> None:
+        if progress:
+            try:
+                progress(msg)
+            except Exception:
+                pass
+
     total_start = time.perf_counter()
 
     # Step 1a: ASR
+    report("Transcribing audio…")
     t0 = time.perf_counter()
     segments = transcribe(audio_path)
     t_asr = time.perf_counter() - t0
     print(f"[pipeline] ASR: {t_asr:.1f}s ({len(segments)} segments)")
 
     # Step 1b: diarization
+    report("Identifying speakers…")
     t0 = time.perf_counter()
     speakers = diarize(audio_path)
     t_diar = time.perf_counter() - t0
@@ -48,6 +60,7 @@ def run_pipeline(audio_path: str, therapist_speaker: str | None = None) -> dict:
     # Step 3: classify utterances attributed to a known speaker
     # (labels are text-intrinsic; UI picks therapist after the fact).
     # UNKNOWN = pyannote couldn't attribute → likely background/noise, skip.
+    report("Classifying utterances…")
     t0 = time.perf_counter()
     classified_count = 0
     for seg in segments:

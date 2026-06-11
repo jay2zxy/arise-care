@@ -21,6 +21,10 @@ load_dotenv()
 _whisper_model: WhisperModel | None = None
 _diarize_pipeline: Pipeline | None = None
 
+# Upper bound on speakers pyannote may detect. Typical session is 1 therapist +
+# 1 patient; 3 leaves room for an occasional third party without over-splitting.
+MAX_SPEAKERS = 3
+
 
 def get_whisper_model() -> WhisperModel:
     global _whisper_model
@@ -80,11 +84,21 @@ def transcribe(audio_path: str, vad_filter: bool = False) -> list[dict]:
     return result
 
 
-def diarize(audio_path: str) -> list[dict]:
-    """Run speaker diarization on audio file."""
+def diarize(audio_path: str, max_speakers: int = MAX_SPEAKERS) -> list[dict]:
+    """Run speaker diarization on audio file.
+
+    A typical session is 1 therapist + 1 patient. Left fully unconstrained,
+    pyannote can over-segment one person across the recording (e.g. 5 clusters
+    from volume/distance/tone drift). Bounding speakers to [1, max_speakers]
+    lets it still auto-estimate the count while preventing runaway splitting.
+    """
     pipeline = get_diarize_pipeline()
     waveform, sample_rate = load_audio_pyav(audio_path)
-    result = pipeline({"waveform": waveform, "sample_rate": sample_rate})
+    result = pipeline(
+        {"waveform": waveform, "sample_rate": sample_rate},
+        min_speakers=1,
+        max_speakers=max_speakers,
+    )
     annotation = result.speaker_diarization
 
     speakers = []
