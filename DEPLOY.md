@@ -20,7 +20,8 @@
       ⚠️ **不能用 EC2 默认的 `ec2-x.compute.amazonaws.com`**——Let's Encrypt 策略禁止给它签证书（会报 `Policy forbids issuing for name on Amazon EC2 domain`），没 HTTPS 麦克风就废
       → 最省：注册免费 **DuckDNS** 子域名（`xxx.duckdns.org`，Let's Encrypt 正常发证）；或买个便宜 .com/.xyz
 - [ ] 实验室 **Ollama API 地址**（如 `http://<lab-host>:11434`），确认对方 `OLLAMA_HOST=0.0.0.0` 且本机连得到
-- [ ] **HF_TOKEN**（HF 网页先接受 `pyannote/embedding` 和 `pyannote/speaker-diarization-3.1` 条款）
+- [ ] **HF_TOKEN**（HF 网页先接受 `pyannote/speaker-diarization-3.1` 条款）
+      ⚠️ `pyannote/embedding` 自 P6 重构后已不用（旧 Live 在线聚类的依赖，现走 diarization-3.1），**只需接受 diarization 一个**
 
 **安全组**：入站 22(你的IP) / 80 / 443；出站 11434 到实验室（同 VPC 走私网 IP，别走公网）
 
@@ -46,7 +47,7 @@ pip install -r requirements.txt
 OLLAMA_URL = "http://<lab-host>:11434/api/chat"
 ```
 ```bash
-echo "HF_TOKEN=hf_xxxx" > .env     # asr.py/speaker.py 用 load_dotenv 读
+echo "HF_TOKEN=hf_xxxx" > .env     # asr.py 用 load_dotenv 读
 ```
 
 **4. 先手动起一次确认能跑**（首次会下 Whisper+pyannote 模型，等几分钟）
@@ -83,23 +84,27 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --d
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update && sudo apt install -y caddy
 ```
-`/etc/caddy/Caddyfile`（reverse_proxy 自动透传 WebSocket）：
+`/etc/caddy/Caddyfile`（reverse_proxy 自动透传 WebSocket，活跃连接不设超时上限）：
 ```
 your.domain.com {
     reverse_proxy 127.0.0.1:8000
 }
 ```
+> Caddy 透传 WS 时不会主动掐活跃连接，Live 的 Stop-后长 pipeline 没问题。
+> **但若中间再加 ALB / CloudFront，它们的 idle timeout（常 60s）会掐断**——见下方关键坑。
 ```bash
 sudo systemctl reload caddy
 ```
 
 **7. 验收**：浏览器开 `https://your.domain.com`
 - Upload 页传音频跑 `/api/analyze` 出转录+统计
-- Live 页 Start → **弹麦克风授权**（HTTPS 才有）→ 出 utterance+分类 → Stop 弹簇摘要
+- Live 页 Start → **弹麦克风授权**（HTTPS 才有）→ 出实时转录预览 → Stop → 等整段 pipeline（状态栏走 Transcribing/Identifying/Classifying）→ **自动跳报告页**出转录+说话人+统计
 
 ## 关键坑
 
 - **麦克风必须 HTTPS**：没 TLS 麦克风被禁，Live 废
+- **⚠️ Live Stop 后是长任务，别让中间层掐 WS**：P6 重构后，按 Stop 才在整段音频上跑 pipeline（30min 录音：BERT ~2min / qwen 十几分钟），期间 WS 要保持。Caddy 直连 uvicorn 默认 OK（透传不掐活跃 WS，且后端会推 status 阶段消息保活）；**但加了 ALB/CloudFront/Nginx 的话要把 idle/read timeout 调到 > 最长 session 处理时间**（ALB 默认 60s 必断）。选 BERT 后端能大幅缩短这个窗口
+- **⚠️ /tmp 与内存**：finalize 写临时 WAV（~57MB/30min），累积 PCM 驻内存（~115MB/30min）；容器化时给够 `/tmp` 和内存，多并发 Live 会叠加
 - **pip 必须 ≥24**：否则 pyannote 依赖解析 OOM
 - **HF gated**：未接受条款会 401
 - **实验室 Ollama 可达**：`OLLAMA_HOST=0.0.0.0` + 安全组放行 11434；同 VPC 用私网 IP
@@ -125,4 +130,4 @@ sudo systemctl reload caddy
 - **Docker 容器化**：把 GPU 依赖固化，需装 `nvidia-container-toolkit`、`docker run --gpus all`，Caddy 留主机。
 - **停机省钱**：不用时 `aws ec2 stop-instances`（保留 EBS）；配合 Elastic IP 保 IP 不变。
 - **⚠️ 换 Amazon Transcribe 去 GPU 化**：用 Transcribe API 替掉 Whisper+pyannote → 后端变纯 CPU 轻服务，可上 Fargate/App Runner、按用量付费、零 GPU 运维。
-  **但这是"重构+重测"，不是捷径**：要重写 `asr.py`/`speaker.py` + Live 流式路径，且 Transcribe 切句方式不同会**让现有 68.2% 精度评估作废，必须重新评估**（"短指令被长句淹没"的问题可能复发）。只有当 GPU 成本/运维成为负担、或要大规模多用户时才值得立项做。
+  **但这是"重构+重测"，不是捷径**：要重写 `asr.py` + `pipeline.py`/Live 路径，且 Transcribe 切句方式不同会**让现有 68.2% 精度评估作废，必须重新评估**（"短指令被长句淹没"的问题可能复发）。只有当 GPU 成本/运维成为负担、或要大规模多用户时才值得立项做。
