@@ -2,8 +2,6 @@
 
 Automated fidelity assessment for strategy training in inpatient rehabilitation. Analyzes rehabilitation session recordings and classifies each therapist utterance as **DIRECTED**, **GUIDED**, or **NONE**.
 
-> Architecture, pipeline, project structure, and API details live in [CLAUDE.md](CLAUDE.md).
-
 ## Prerequisites
 
 - **Python 3.10** (developed and tested on 3.10.11; newer minors are untested against the pinned torch/pyannote versions)
