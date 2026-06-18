@@ -54,6 +54,31 @@ def list_models():
     return {"models": names}
 
 
+@api.get("/health")
+def health():
+    """Report whether the currently selected classification backend is ready.
+
+    BERT runs in-process (always ready). For an Ollama model we probe the daemon
+    and check the model is actually installed, so the UI can show a truthful
+    status dot instead of assuming 'online'.
+    """
+    model = state.current_model
+    if model == state.BERT_MODEL:
+        return {"backend": "bert", "model": model, "ollama_up": None, "model_available": True, "ready": True}
+
+    up = False
+    present = False
+    try:
+        res = httpx.get("http://localhost:11434/api/tags", timeout=3)
+        if res.status_code == 200:
+            up = True
+            names = [m["name"] for m in res.json().get("models", [])]
+            present = any(n == model or n.split(":")[0] == model for n in names)
+    except Exception:
+        up = False
+    return {"backend": "ollama", "model": model, "ollama_up": up, "model_available": present, "ready": up and present}
+
+
 app.include_router(api)
 
 static_dir = Path(__file__).parent / "static"

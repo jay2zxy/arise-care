@@ -198,6 +198,8 @@
     .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
     .status-dot.online { background: var(--n); }
     .status-dot.offline { background: var(--d); }
+    .status-dot.checking { background: var(--g); animation: statusPulse 1.1s ease-in-out infinite; }
+    @keyframes statusPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
     /* ── Stats (Right Sidebar) ─────────────────────── */
     .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
@@ -344,6 +346,25 @@
     .pagination-info input::-webkit-inner-spin-button,
     .pagination-info input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
+    /* ── Session detail drawer (slide-over from right) ───── */
+    .drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150; animation: fadeIn 0.2s ease; }
+    .drawer-backdrop.show { display: block; }
+    .drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; width: 740px; max-width: 94vw;
+      background: var(--surface-0); border-left: 1px solid var(--border);
+      box-shadow: -16px 0 48px rgba(0,0,0,0.32); z-index: 160;
+      transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex; flex-direction: column;
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 24px 28px 18px; border-bottom: 1px solid var(--border); }
+    .drawer-title { font-family: var(--font-display); font-size: 1.55rem; font-weight: 500; letter-spacing: -0.012em; color: var(--text); word-break: break-word; }
+    .drawer-meta { font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-dim); margin-top: 6px; }
+    .drawer-head-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 24px 28px 36px; }
+    .drawer-body::-webkit-scrollbar { width: 6px; }
+    .drawer-body::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+
     .hidden { display: none !important; }
 
     /* ── Model Picker ──────────────────────────────── */
@@ -488,6 +509,26 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- ═══ Session detail drawer (opens from History) ═══ -->
+<div class="drawer-backdrop" id="sessionDrawerBackdrop" onclick="closeSessionDrawer()">
+  <div class="drawer" id="sessionDrawer" onclick="event.stopPropagation()">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title" id="drawerTitle"></div>
+        <div class="drawer-meta" id="drawerMeta"></div>
+      </div>
+      <div class="drawer-head-actions">
+        <button class="btn btn-sm btn-ghost" onclick="drawerExportJSON()">JSON</button>
+        <button class="btn btn-sm btn-ghost" onclick="drawerExportCSV()">CSV</button>
+        <button class="icon-btn" onclick="closeSessionDrawer()" title="Close (Esc)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </div>
+</div>
+
 <!-- ═══ Left Sidebar ═══ -->
 <div class="sidebar-left">
   <div class="brand">
@@ -522,7 +563,7 @@
   <div class="sidebar-bottom">
     <div class="nav-item" id="modelPickerTrigger" onclick="openModelPicker(event)" title="Click to switch model">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m-7.07-3.93l4.24-4.24m5.66-5.66l4.24-4.24M1 12h6m6 0h6m-3.93 7.07l-4.24-4.24m-5.66-5.66L4.93 4.93"/></svg>
-      <span id="modelStatusText"><span class="status-dot online"></span><span id="modelNameInline">…</span></span>
+      <span id="modelStatusText"><span class="status-dot checking"></span><span id="modelNameInline">…</span></span>
     </div>
   </div>
 </div>
@@ -802,6 +843,11 @@
     const text = input.value.trim();
     if (!text) return;
 
+    if (!modelReady) {
+      await refreshHealth();               // maybe it just came online
+      if (!modelReady) { showToast(healthTip || 'Classifier not ready'); return; }
+    }
+
     btn.disabled = true;
     try {
       const res = await fetch('/api/classify', {
@@ -812,6 +858,7 @@
       const data = await res.json();
       if (data.error) { showToast(data.error); return; }
       const cls = (data.classification || '').match(/DIRECTED|GUIDED|NONE/)?.[0] || 'ERROR';
+      if (cls === 'ERROR') { showToast('Unexpected classifier output — is the right model loaded?'); return; }
 
       const el = document.getElementById('classifyValue');
       el.textContent = cls;
@@ -871,6 +918,21 @@
     nameEl.textContent = `${f.name} (${size})`;
     nameEl.classList.remove('hidden');
     document.getElementById('analyzeBtn').disabled = false;
+
+    // A newly picked file invalidates the report from the previous run.
+    currentReport = null;
+    document.getElementById('reportSection').classList.add('hidden');
+    document.getElementById('statsPanel').classList.add('hidden');
+  }
+
+  // Clear the picked file so the upload zone is ready for the next session
+  // (called after a successful analysis — the report itself stays on screen).
+  function resetUploadInput() {
+    selectedFile = null;
+    document.getElementById('audioFile').value = '';
+    const nameEl = document.getElementById('uploadName');
+    nameEl.textContent = '';
+    nameEl.classList.add('hidden');
   }
 
   // ── Analyze ──────────────────────────────────────────
@@ -913,6 +975,11 @@
     const btn = document.getElementById('analyzeBtn');
     const cancelBtn = document.getElementById('cancelBtn');
 
+    if (!modelReady) {
+      await refreshHealth();
+      if (!modelReady) { showToast((healthTip || 'Classifier not ready') + ' — analysis needs the classifier.'); return; }
+    }
+
     btn.disabled = true; btn.textContent = 'Analyzing…';
     cancelBtn.classList.remove('hidden');
     document.getElementById('reportSection').classList.add('hidden');
@@ -934,13 +1001,14 @@
       saveSession(currentFilename, data);
       updateNavHistory();
       showToast('Analysis complete', 'success');
+      resetUploadInput();   // done with this file; report stays, zone ready for the next
     } catch (e) {
       if (e.name === 'AbortError') { showToast('Analysis cancelled'); }
       else { showToast('Connection error: ' + e.message); }
     }
     finally {
       stopTimer();
-      btn.disabled = false; btn.textContent = 'Analyze';
+      btn.disabled = !selectedFile; btn.textContent = 'Analyze';   // stays disabled after success (file cleared)
       cancelBtn.classList.add('hidden');
       analyzeController = null;
     }
@@ -1147,7 +1215,7 @@
       const dPct = dgTotal > 0 ? Math.round(d.count / dgTotal * 1000) / 10 : 0;
       const gPct = dgTotal > 0 ? Math.round(g.count / dgTotal * 1000) / 10 : 0;
       const date = new Date(s.timestamp).toLocaleString();
-      return `<div class="session-card" onclick="loadSession(${s.id})">
+      return `<div class="session-card" onclick="openSessionDrawer(${s.id})">
         <div>
           <div class="session-name">${esc(s.filename)}</div>
           <div class="session-meta">${date} · ${dgTotal} cues</div>
@@ -1161,14 +1229,91 @@
     }).join('');
   }
 
-  function loadSession(id) {
+  // Open a saved session in a right-side slide-over drawer (read-only) instead
+  // of navigating away to the Analyze page.
+  let drawerSession = null;
+
+  function openSessionDrawer(id) {
     const s = loadSessions().find(x => x.id === id);
     if (!s) return;
-    currentReport = { segments: s.segments, stats: s.stats };
-    currentFilename = s.filename;
-    renderReport(currentReport);
-    switchPage('analyze');
+    drawerSession = s;
+
+    const segs = s.segments || [];
+    const st = s.stats || {};
+    const therapist = st.therapist_speaker;
+    const dCount = (st.directed && st.directed.count) || 0;
+    const gCount = (st.guided && st.guided.count) || 0;
+    const dgTotal = dCount + gCount;
+    const dPct = dgTotal ? Math.round(dCount / dgTotal * 1000) / 10 : 0;
+    const gPct = dgTotal ? Math.round(gCount / dgTotal * 1000) / 10 : 0;
+    const speakers = [...new Set(segs.map(x => x.speaker || 'UNKNOWN'))];
+    const dur = segs.length ? Math.max(...segs.map(x => x.end || 0)) : 0;
+
+    document.getElementById('drawerTitle').textContent = s.filename;
+    document.getElementById('drawerMeta').textContent =
+      `${new Date(s.timestamp).toLocaleString()} · ${dgTotal} cues`;
+
+    const kpi = `
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-label">Total Cues</div><div class="kpi-value">${dgTotal}</div></div>
+        <div class="kpi-card d"><div class="kpi-label">Directed</div><div class="kpi-value d">${dPct}%<span class="kpi-sub">${dCount}</span></div><div class="kpi-bar"><div style="width:${dPct}%;background:var(--d)"></div></div></div>
+        <div class="kpi-card g"><div class="kpi-label">Guided</div><div class="kpi-value g">${gPct}%<span class="kpi-sub">${gCount}</span></div><div class="kpi-bar"><div style="width:${gPct}%;background:var(--g)"></div></div></div>
+        <div class="kpi-card"><div class="kpi-label">Speakers</div><div class="kpi-value">${speakers.length}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Duration</div><div class="kpi-value">${fmt(dur)}</div></div>
+      </div>`;
+
+    const rows = segs.map(seg => {
+      const isT = seg.speaker === therapist;
+      const cls = seg.classification;
+      const badge = cls ? `<span class="badge ${cls}">${cls}</span>`
+                        : `<span class="badge PATIENT">${isT ? '' : 'patient'}</span>`;
+      return `<div class="segment ${isT ? 'therapist-row' : ''}">
+        <div class="seg-time">${fmt(seg.start)} – ${fmt(seg.end)}</div>
+        <div class="seg-speaker" style="color:${speakerColor(seg.speaker || 'UNKNOWN')}">${seg.speaker || 'UNKNOWN'}</div>
+        <div class="seg-text">${esc(seg.text)}</div>
+        <div class="seg-badge">${badge}</div>
+      </div>`;
+    }).join('');
+
+    const body = document.getElementById('drawerBody');
+    body.innerHTML = kpi + '<div class="section-header"><span>Transcript</span></div>' + rows;
+    body.scrollTop = 0;
+
+    document.getElementById('sessionDrawerBackdrop').classList.add('show');
+    requestAnimationFrame(() => document.getElementById('sessionDrawer').classList.add('open'));
   }
+
+  function closeSessionDrawer() {
+    document.getElementById('sessionDrawer').classList.remove('open');
+    const bd = document.getElementById('sessionDrawerBackdrop');
+    setTimeout(() => bd.classList.remove('show'), 300);   // let the slide-out finish
+  }
+
+  function drawerExportJSON() {
+    if (!drawerSession) return;
+    const data = { segments: drawerSession.segments, stats: drawerSession.stats };
+    downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
+      stem(drawerSession.filename) + '_report.json');
+  }
+
+  function drawerExportCSV() {
+    if (!drawerSession) return;
+    const rows = [['start', 'end', 'speaker', 'text', 'classification']];
+    for (const seg of (drawerSession.segments || [])) {
+      rows.push([
+        (seg.start || 0).toFixed(2), (seg.end || 0).toFixed(2), seg.speaker || '',
+        '"' + (seg.text || '').replace(/"/g, '""') + '"', seg.classification || '',
+      ]);
+    }
+    downloadBlob(new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' }),
+      stem(drawerSession.filename) + '_report.csv');
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('sessionDrawerBackdrop').classList.contains('show')) {
+      closeSessionDrawer();
+    }
+  });
 
   function deleteSession(e, id) {
     e.stopPropagation();
@@ -1192,7 +1337,7 @@
       return;
     }
     el.innerHTML = sessions.map(s =>
-      `<div class="nav-history-item" onclick="loadSession(${s.id})">${esc(s.filename)}</div>`
+      `<div class="nav-history-item" onclick="openSessionDrawer(${s.id})">${esc(s.filename)}</div>`
     ).join('');
   }
 
@@ -1200,6 +1345,9 @@
 
   // ── Model Config / Picker ────────────────────────────
   let MODEL_NAME = '…';
+  let modelReady = false;     // is the selected classification backend usable right now?
+  let modelBackend = null;    // 'bert' | 'ollama'
+  let healthTip = 'Checking model backend…';
 
   function applyModelName(name) {
     MODEL_NAME = name;
@@ -1207,6 +1355,35 @@
     document.getElementById('modelNamePanel').textContent = name;
     document.getElementById('pipelineDesc').textContent =
       `Audio → faster-whisper (ASR) → pyannote (diarization) → ${name} (classify) → report`;
+  }
+
+  // Poll the backend so the status dot tells the truth (Ollama down, model missing, BERT ready…).
+  async function refreshHealth() {
+    const dot = document.querySelector('#modelStatusText .status-dot');
+    const trigger = document.getElementById('modelPickerTrigger');
+    try {
+      const res = await fetch('/api/health');
+      const h = await res.json();
+      let cls, tip;
+      if (h.ready) {
+        cls = 'online';
+        tip = h.backend === 'bert' ? 'BERT backend (in-process) · ready'
+                                   : `Ollama connected · ${h.model}`;
+      } else if (h.backend === 'ollama' && h.ollama_up && !h.model_available) {
+        cls = 'offline';
+        tip = `Ollama is running, but model "${h.model}" isn't installed.\nRun: ollama create ${h.model} -f Modelfile`;
+      } else {
+        cls = 'offline';
+        tip = 'Ollama not running.\nStart it with: ollama serve  (or switch to the BERT model)';
+      }
+      modelReady = !!h.ready; modelBackend = h.backend; healthTip = tip;
+      if (dot) dot.className = 'status-dot ' + cls;
+      if (trigger) trigger.title = tip + '\n— click to switch model';
+    } catch {
+      modelReady = false; healthTip = 'Server unreachable';
+      if (dot) dot.className = 'status-dot offline';
+      if (trigger) trigger.title = 'Server unreachable';
+    }
   }
 
   async function loadModelConfig() {
@@ -1291,6 +1468,7 @@
       if (!res.ok) throw new Error('Failed to set model');
       const data = await res.json();
       applyModelName(data.model);
+      refreshHealth();
       showToast(`Switched to ${data.model}`, 'success');
     } catch (e) {
       showToast('Switch failed: ' + e.message);
@@ -1298,6 +1476,8 @@
   }
 
   loadModelConfig();
+  refreshHealth();
+  setInterval(refreshHealth, 12000);   // keep the status dot honest while the page is open
 
   // ── Live Streaming ───────────────────────────────────
   const CHUNK_MS = 3000;
