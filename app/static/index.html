@@ -350,20 +350,32 @@
     .drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150; animation: fadeIn 0.2s ease; }
     .drawer-backdrop.show { display: block; }
     .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; width: 740px; max-width: 94vw;
-      background: var(--surface-0); border-left: 1px solid var(--border);
-      box-shadow: -16px 0 48px rgba(0,0,0,0.32); z-index: 160;
-      transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: fixed; top: 18px; right: 18px; bottom: 18px; width: 560px; max-width: calc(100vw - 36px);
+      background: var(--surface-0); border: 1px solid var(--border-2); border-radius: 18px;
+      box-shadow: -10px 0 60px rgba(0,0,0,0.40); z-index: 160; overflow: hidden;
+      transform: translateX(calc(100% + 28px)); transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex; flex-direction: column;
     }
     .drawer.open { transform: translateX(0); }
-    .drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 24px 28px 18px; border-bottom: 1px solid var(--border); }
+    .drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 22px 24px 16px; border-bottom: 1px solid var(--border); }
     .drawer-title { font-family: var(--font-display); font-size: 1.55rem; font-weight: 500; letter-spacing: -0.012em; color: var(--text); word-break: break-word; }
     .drawer-meta { font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-dim); margin-top: 6px; }
     .drawer-head-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
-    .drawer-body { flex: 1; overflow-y: auto; padding: 24px 28px 36px; }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 22px 24px 32px; }
     .drawer-body::-webkit-scrollbar { width: 6px; }
     .drawer-body::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+    /* narrower drawer → tighter KPI grid + slightly smaller numbers */
+    .drawer .kpi-row { grid-template-columns: repeat(auto-fit, minmax(116px, 1fr)); gap: 10px; margin-bottom: 22px; }
+    .drawer .kpi-value { font-size: 1.7rem; }
+    .drawer .kpi-card { padding: 14px 15px 13px; border-radius: 12px; }
+    .drawer-overview {
+      display: flex; flex-wrap: wrap; gap: 9px 16px; align-items: center;
+      font-size: 0.85rem; color: var(--text-dim); margin-bottom: 22px; line-height: 1.7;
+    }
+    .drawer-overview b { color: var(--text-2); font-weight: 600; }
+    .drawer-overview .badge { vertical-align: middle; }
+    .drawer-therapist { font-family: var(--font-mono); font-size: 0.8rem; background: var(--surface-raised); color: var(--text); border: 1px solid var(--border-2); border-radius: 6px; padding: 2px 6px; outline: none; cursor: pointer; vertical-align: middle; }
+    .drawer-therapist:focus { border-color: var(--accent); }
 
     .hidden { display: none !important; }
 
@@ -1229,58 +1241,125 @@
     }).join('');
   }
 
-  // Open a saved session in a right-side slide-over drawer (read-only) instead
-  // of navigating away to the Analyze page.
+  // Open a saved session in a right-side slide-over drawer. Speaker reassignment
+  // and therapist selection work here just like the Analyze page, and edits are
+  // persisted back to the saved session.
   let drawerSession = null;
+  let drawerTherapist = null;
+  let drawerKnownSpeakers = [];
 
   function openSessionDrawer(id) {
     const s = loadSessions().find(x => x.id === id);
     if (!s) return;
     drawerSession = s;
-
     const segs = s.segments || [];
-    const st = s.stats || {};
-    const therapist = st.therapist_speaker;
-    const dCount = (st.directed && st.directed.count) || 0;
-    const gCount = (st.guided && st.guided.count) || 0;
+    drawerKnownSpeakers = [...new Set(segs.map(x => x.speaker || 'UNKNOWN'))].sort();
+    drawerTherapist = (s.stats && s.stats.therapist_speaker) || drawerKnownSpeakers[0] || null;
+    renderDrawer(true);
+    document.getElementById('sessionDrawerBackdrop').classList.add('show');
+    requestAnimationFrame(() => document.getElementById('sessionDrawer').classList.add('open'));
+  }
+
+  function renderDrawer(resetScroll) {
+    const s = drawerSession;
+    const segs = s.segments || [];
+    const therapist = drawerTherapist;
+
+    let dCount = 0, gCount = 0;
+    for (const x of segs) {
+      if (x.speaker === therapist && x.classification) {
+        if (x.classification === 'DIRECTED') dCount++;
+        else if (x.classification === 'GUIDED') gCount++;
+      }
+    }
     const dgTotal = dCount + gCount;
     const dPct = dgTotal ? Math.round(dCount / dgTotal * 1000) / 10 : 0;
     const gPct = dgTotal ? Math.round(gCount / dgTotal * 1000) / 10 : 0;
-    const speakers = [...new Set(segs.map(x => x.speaker || 'UNKNOWN'))];
     const dur = segs.length ? Math.max(...segs.map(x => x.end || 0)) : 0;
 
     document.getElementById('drawerTitle').textContent = s.filename;
     document.getElementById('drawerMeta').textContent =
       `${new Date(s.timestamp).toLocaleString()} · ${dgTotal} cues`;
 
+    const opts = drawerKnownSpeakers.map(sp =>
+      `<option value="${sp}" ${sp === therapist ? 'selected' : ''}>${sp}</option>`).join('');
+    const dominant = dgTotal === 0 ? null : (dPct >= gPct ? 'DIRECTED' : 'GUIDED');
+    const overview = `
+      <div class="section-header"><span>Overview</span></div>
+      <div class="drawer-overview">
+        <span>Therapist <select class="drawer-therapist" onchange="onDrawerTherapistChange(this.value)">${opts}</select></span>
+        <span>Mostly ${dominant ? `<span class="badge ${dominant}">${dominant}</span>` : '—'}</span>
+        <span><b>${drawerKnownSpeakers.length}</b> speakers</span>
+        <span><b>${fmt(dur)}</b> long</span>
+      </div>`;
+
     const kpi = `
       <div class="kpi-row">
         <div class="kpi-card"><div class="kpi-label">Total Cues</div><div class="kpi-value">${dgTotal}</div></div>
         <div class="kpi-card d"><div class="kpi-label">Directed</div><div class="kpi-value d">${dPct}%<span class="kpi-sub">${dCount}</span></div><div class="kpi-bar"><div style="width:${dPct}%;background:var(--d)"></div></div></div>
         <div class="kpi-card g"><div class="kpi-label">Guided</div><div class="kpi-value g">${gPct}%<span class="kpi-sub">${gCount}</span></div><div class="kpi-bar"><div style="width:${gPct}%;background:var(--g)"></div></div></div>
-        <div class="kpi-card"><div class="kpi-label">Speakers</div><div class="kpi-value">${speakers.length}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Speakers</div><div class="kpi-value">${drawerKnownSpeakers.length}</div></div>
         <div class="kpi-card"><div class="kpi-label">Duration</div><div class="kpi-value">${fmt(dur)}</div></div>
       </div>`;
 
-    const rows = segs.map(seg => {
+    const rows = segs.map((seg, idx) => {
       const isT = seg.speaker === therapist;
       const cls = seg.classification;
       const badge = cls ? `<span class="badge ${cls}">${cls}</span>`
                         : `<span class="badge PATIENT">${isT ? '' : 'patient'}</span>`;
+      const spk = seg.speaker || 'UNKNOWN';
       return `<div class="segment ${isT ? 'therapist-row' : ''}">
         <div class="seg-time">${fmt(seg.start)} – ${fmt(seg.end)}</div>
-        <div class="seg-speaker" style="color:${speakerColor(seg.speaker || 'UNKNOWN')}">${seg.speaker || 'UNKNOWN'}</div>
+        <div class="seg-speaker seg-speaker-pick" style="color:${speakerColor(spk)}" onclick="cycleDrawerSpeaker(${idx})" title="Click to reassign speaker">${spk}</div>
         <div class="seg-text">${esc(seg.text)}</div>
         <div class="seg-badge">${badge}</div>
       </div>`;
     }).join('');
 
     const body = document.getElementById('drawerBody');
-    body.innerHTML = kpi + '<div class="section-header"><span>Transcript</span></div>' + rows;
-    body.scrollTop = 0;
+    const prev = body.scrollTop;
+    body.innerHTML = overview + kpi + '<div class="section-header"><span>Transcript</span></div>' + rows;
+    body.scrollTop = resetScroll ? 0 : prev;   // keep position when re-rendering after an edit
+  }
 
-    document.getElementById('sessionDrawerBackdrop').classList.add('show');
-    requestAnimationFrame(() => document.getElementById('sessionDrawer').classList.add('open'));
+  function cycleDrawerSpeaker(idx) {
+    const seg = drawerSession.segments[idx];
+    const cur = seg.speaker || 'UNKNOWN';
+    const i = drawerKnownSpeakers.indexOf(cur);
+    seg.speaker = drawerKnownSpeakers[(i + 1) % drawerKnownSpeakers.length];
+    persistDrawer();
+    renderDrawer(false);
+  }
+
+  function onDrawerTherapistChange(val) {
+    drawerTherapist = val;
+    persistDrawer();
+    renderDrawer(false);
+  }
+
+  // Recompute directed/guided counts for the chosen therapist and write the
+  // edited session back to localStorage so the change sticks (and the History
+  // list percentages update too).
+  function persistDrawer() {
+    const s = drawerSession;
+    const segs = s.segments || [];
+    let d = 0, g = 0;
+    for (const x of segs) {
+      if (x.speaker === drawerTherapist && x.classification) {
+        if (x.classification === 'DIRECTED') d++;
+        else if (x.classification === 'GUIDED') g++;
+      }
+    }
+    s.stats = Object.assign({}, s.stats, {
+      therapist_speaker: drawerTherapist,
+      directed: Object.assign({}, s.stats && s.stats.directed, { count: d }),
+      guided: Object.assign({}, s.stats && s.stats.guided, { count: g }),
+    });
+    const all = loadSessions();
+    const i = all.findIndex(x => x.id === s.id);
+    if (i >= 0) { all[i] = s; saveSessions(all); }
+    renderSessionList();
+    updateNavHistory();
   }
 
   function closeSessionDrawer() {
