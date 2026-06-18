@@ -37,5 +37,6 @@ Open [http://localhost:8000](http://localhost:8000).
 ## Usage
 
 - **Text Classify** — type a therapist utterance, press Enter → DIRECTED / GUIDED / NONE.
-- **Session Analysis** — upload audio (.m4a/.mp3/.wav/.ogg/.flac), click **Analyze** → transcription + speaker diarization + per-utterance classification + stats. Export as JSON/CSV.
-- **History** — past sessions are saved in browser localStorage.
+- **Session Analysis** — upload audio (.m4a/.mp3/.wav/.ogg/.flac), click **Analyze** → transcription + speaker diarization + per-utterance classification + a stats dashboard. Export as JSON/CSV.
+- **History** — saved sessions live in the sidebar's **Recent Sessions** (collapsible); click one to view its analysis in the main area — transcript, speaker re-assignment, rename, export. Stored in your browser (localStorage).
+- **Model** — the sidebar shows the active classifier with a live status dot (green = ready). Click it to switch between `qwen-bala` (Ollama) and `bert` (in-process, no Ollama needed).

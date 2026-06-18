@@ -346,32 +346,31 @@
     .pagination-info input::-webkit-inner-spin-button,
     .pagination-info input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
-    /* ── Session detail drawer (slide-over from right) ───── */
-    .drawer-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150; animation: fadeIn 0.2s ease; }
-    .drawer-backdrop.show { display: block; }
-    .drawer {
-      position: fixed; top: 18px; right: 18px; bottom: 18px; width: 560px; max-width: calc(100vw - 36px);
-      background: var(--surface-0); border: 1px solid var(--border-2); border-radius: 18px;
-      box-shadow: -10px 0 60px rgba(0,0,0,0.40); z-index: 160; overflow: hidden;
-      transform: translateX(calc(100% + 28px)); transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex; flex-direction: column;
-    }
-    .drawer.open { transform: translateX(0); }
-    .drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 22px 24px 16px; border-bottom: 1px solid var(--border); }
-    .drawer-title { font-family: var(--font-display); font-size: 1.55rem; font-weight: 500; letter-spacing: -0.012em; color: var(--text); word-break: break-word; }
+    /* ── Sidebar "Recent Sessions" collapsible nav list ───── */
+    .nav-recent-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; font-family: var(--font-mono); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.13em; color: var(--text-faint); cursor: pointer; margin-top: 8px; }
+    .nav-recent-head:hover { color: var(--text-dim); }
+    .nav-recent-head > span { flex: 1; }
+    .nav-chevron { width: 13px; height: 13px; flex-shrink: 0; transition: transform 0.18s; }
+    .nav-recent-clear { background: transparent; border: none; color: var(--text-faint-2); cursor: pointer; padding: 2px; display: flex; border-radius: 4px; }
+    .nav-recent-clear:hover { color: var(--d); }
+    .nav-recent-clear svg { width: 14px; height: 14px; }
+    .nav-recent-list.collapsed { display: none; }
+
+    .nav-history-item { display: flex; align-items: center; gap: 6px; }
+    .nav-history-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .nav-history-item.active { background: var(--surface-active); color: var(--text-active); }
+    .nav-history-del { background: transparent; border: none; color: var(--text-faint-2); cursor: pointer; font-size: 0.78rem; padding: 0 2px; opacity: 0; flex-shrink: 0; }
+    .nav-history-item:hover .nav-history-del { opacity: 1; }
+    .nav-history-del:hover { color: var(--d); }
+
+    /* ── Session detail (main area, opened from sidebar) ───── */
+    .history-detail-empty { color: var(--text-faint-2); text-align: center; padding: 100px 20px; font-size: 0.95rem; }
+    .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+    .drawer-title { font-family: var(--font-display); font-size: 1.9rem; font-weight: 500; letter-spacing: -0.015em; color: var(--text); word-break: break-word; cursor: default; }
+    .drawer-title.editing { outline: 2px solid var(--accent); border-radius: 6px; padding: 0 4px; background: var(--surface-raised); cursor: text; }
     .drawer-meta { font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-dim); margin-top: 6px; }
     .drawer-head-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
-    .drawer-body { flex: 1; overflow-y: auto; padding: 22px 24px 32px; }
-    .drawer-body::-webkit-scrollbar { width: 6px; }
-    .drawer-body::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
-    /* narrower drawer → tighter KPI grid + slightly smaller numbers */
-    .drawer .kpi-row { grid-template-columns: repeat(auto-fit, minmax(116px, 1fr)); gap: 10px; margin-bottom: 22px; }
-    .drawer .kpi-value { font-size: 1.7rem; }
-    .drawer .kpi-card { padding: 14px 15px 13px; border-radius: 12px; }
-    .drawer-overview {
-      display: flex; flex-wrap: wrap; gap: 9px 16px; align-items: center;
-      font-size: 0.85rem; color: var(--text-dim); margin-bottom: 22px; line-height: 1.7;
-    }
+    .drawer-overview { display: flex; flex-wrap: wrap; gap: 9px 18px; align-items: center; font-size: 0.86rem; color: var(--text-dim); margin-bottom: 24px; line-height: 1.7; }
     .drawer-overview b { color: var(--text-2); font-weight: 600; }
     .drawer-overview .badge { vertical-align: middle; }
     .drawer-therapist { font-family: var(--font-mono); font-size: 0.8rem; background: var(--surface-raised); color: var(--text); border: 1px solid var(--border-2); border-radius: 6px; padding: 2px 6px; outline: none; cursor: pointer; vertical-align: middle; }
@@ -521,23 +520,15 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<!-- ═══ Session detail drawer (opens from History) ═══ -->
-<div class="drawer-backdrop" id="sessionDrawerBackdrop" onclick="closeSessionDrawer()">
-  <div class="drawer" id="sessionDrawer" onclick="event.stopPropagation()">
-    <div class="drawer-head">
-      <div>
-        <div class="drawer-title" id="drawerTitle"></div>
-        <div class="drawer-meta" id="drawerMeta"></div>
-      </div>
-      <div class="drawer-head-actions">
-        <button class="btn btn-sm btn-ghost" onclick="drawerExportJSON()">JSON</button>
-        <button class="btn btn-sm btn-ghost" onclick="drawerExportCSV()">CSV</button>
-        <button class="icon-btn" onclick="closeSessionDrawer()" title="Close (Esc)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-        </button>
-      </div>
+<!-- ═══ Confirm dialog (themed; replaces native confirm) ═══ -->
+<div class="modal-backdrop" id="confirmBackdrop" onclick="closeConfirm(false)">
+  <div class="modal-card" style="max-width:420px;" onclick="event.stopPropagation()">
+    <div class="modal-title">Please confirm</div>
+    <div class="modal-subtitle" id="confirmMsg"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-ghost" onclick="closeConfirm(false)">Cancel</button>
+      <button class="btn btn-sm btn-cancel" id="confirmOk" onclick="closeConfirm(true)">Delete</button>
     </div>
-    <div class="drawer-body" id="drawerBody"></div>
   </div>
 </div>
 
@@ -561,14 +552,15 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
       Live
     </div>
-    <div class="nav-item" data-page="history" onclick="switchPage('history')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
-      History
+    <div class="nav-recent-head" onclick="toggleRecentSessions()">
+      <svg class="nav-chevron" id="recentChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      <span>Recent Sessions</span>
+      <button class="nav-recent-clear" onclick="event.stopPropagation(); clearAllSessions()" title="Clear all sessions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+      </button>
     </div>
-
-    <div class="nav-label">Recent Sessions</div>
-    <div id="navHistoryList">
-      <div class="nav-history-item" style="color:var(--text-faint-2); font-style:italic;">No sessions yet</div>
+    <div id="navHistoryList" class="nav-recent-list">
+      <div class="nav-history-item" style="color:var(--text-faint-2); font-style:italic; cursor:default;">No sessions yet</div>
     </div>
   </div>
 
@@ -700,13 +692,11 @@
     </div>
   </div>
 
-  <!-- Page: History -->
+  <!-- Page: Session detail (opened from the sidebar's Recent Sessions) -->
   <div class="content-area hidden" id="page-history">
-    <div class="page-title">Session history</div>
-    <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
-      <button class="btn btn-sm btn-ghost" onclick="clearAllSessions()">Clear All</button>
+    <div id="historyDetail">
+      <div class="history-detail-empty">Pick a session from <b>Recent Sessions</b> in the sidebar to view its analysis.</div>
     </div>
-    <div id="sessionList"></div>
   </div>
 
   <!-- Bottom Input Bar (classify) -->
@@ -815,7 +805,6 @@
     // therapist dropdown is for the offline analyze flow only
     document.getElementById('therapistSelectPanel').classList.toggle('hidden', name !== 'analyze');
 
-    if (name === 'history') renderSessionList();
     closeSidebars();
   }
 
@@ -1214,54 +1203,40 @@
     saveSessions(sessions.slice(0, 20));
   }
 
-  function renderSessionList() {
-    const sessions = loadSessions();
-    const el = document.getElementById('sessionList');
-    if (!sessions.length) {
-      el.innerHTML = '<div class="empty-state">No sessions yet. Analyze an audio file to get started.</div>';
-      return;
-    }
-    el.innerHTML = sessions.map(s => {
-      const d = s.stats.directed, g = s.stats.guided;
-      const dgTotal = d.count + g.count;
-      const dPct = dgTotal > 0 ? Math.round(d.count / dgTotal * 1000) / 10 : 0;
-      const gPct = dgTotal > 0 ? Math.round(g.count / dgTotal * 1000) / 10 : 0;
-      const date = new Date(s.timestamp).toLocaleString();
-      return `<div class="session-card" onclick="openSessionDrawer(${s.id})">
-        <div>
-          <div class="session-name">${esc(s.filename)}</div>
-          <div class="session-meta">${date} · ${dgTotal} cues</div>
-        </div>
-        <div class="session-badges">
-          <span class="badge DIRECTED">${dPct}%</span>
-          <span class="badge GUIDED">${gPct}%</span>
-          <button class="session-del" onclick="deleteSession(event,${s.id})">✕</button>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  // Open a saved session in a right-side slide-over drawer. Speaker reassignment
-  // and therapist selection work here just like the Analyze page, and edits are
-  // persisted back to the saved session.
+  // The session list lives in the sidebar (Recent Sessions); selecting one
+  // renders its analysis in the main area here. Speaker reassignment and
+  // therapist selection work here and persist back to the saved session.
   let drawerSession = null;
   let drawerTherapist = null;
   let drawerKnownSpeakers = [];
+  let drawerPage = 1;
 
-  function openSessionDrawer(id) {
+  function selectHistorySession(id) {
     const s = loadSessions().find(x => x.id === id);
     if (!s) return;
     drawerSession = s;
     const segs = s.segments || [];
     drawerKnownSpeakers = [...new Set(segs.map(x => x.speaker || 'UNKNOWN'))].sort();
     drawerTherapist = (s.stats && s.stats.therapist_speaker) || drawerKnownSpeakers[0] || null;
-    renderDrawer(true);
-    document.getElementById('sessionDrawerBackdrop').classList.add('show');
-    requestAnimationFrame(() => document.getElementById('sessionDrawer').classList.add('open'));
+    drawerPage = 1;
+    renderSessionDetail(true);
+    highlightSelectedSession();
   }
 
-  function renderDrawer(resetScroll) {
+  function selectFromNav(id) {
+    switchPage('history');
+    selectHistorySession(id);
+  }
+
+  function highlightSelectedSession() {
+    const id = drawerSession ? String(drawerSession.id) : null;
+    document.querySelectorAll('#navHistoryList .nav-history-item').forEach(c =>
+      c.classList.toggle('active', c.dataset.id === id));
+  }
+
+  function renderSessionDetail(resetScroll) {
     const s = drawerSession;
+    if (!s) return;
     const segs = s.segments || [];
     const therapist = drawerTherapist;
 
@@ -1277,9 +1252,17 @@
     const gPct = dgTotal ? Math.round(gCount / dgTotal * 1000) / 10 : 0;
     const dur = segs.length ? Math.max(...segs.map(x => x.end || 0)) : 0;
 
-    document.getElementById('drawerTitle').textContent = s.filename;
-    document.getElementById('drawerMeta').textContent =
-      `${new Date(s.timestamp).toLocaleString()} · ${dgTotal} cues`;
+    const head = `
+      <div class="detail-head">
+        <div>
+          <div class="drawer-title" ondblclick="beginRename(this)" title="Double-click to rename">${esc(s.filename)}</div>
+          <div class="drawer-meta">${new Date(s.timestamp).toLocaleString()} · ${dgTotal} cues</div>
+        </div>
+        <div class="drawer-head-actions">
+          <button class="btn btn-sm btn-ghost" onclick="drawerExportJSON()">JSON</button>
+          <button class="btn btn-sm btn-ghost" onclick="drawerExportCSV()">CSV</button>
+        </div>
+      </div>`;
 
     const opts = drawerKnownSpeakers.map(sp =>
       `<option value="${sp}" ${sp === therapist ? 'selected' : ''}>${sp}</option>`).join('');
@@ -1302,7 +1285,14 @@
         <div class="kpi-card"><div class="kpi-label">Duration</div><div class="kpi-value">${fmt(dur)}</div></div>
       </div>`;
 
-    const rows = segs.map((seg, idx) => {
+    const totalPages = Math.max(1, Math.ceil(segs.length / PAGE_SIZE));
+    if (drawerPage > totalPages) drawerPage = totalPages;
+    if (drawerPage < 1) drawerPage = 1;
+    const start = (drawerPage - 1) * PAGE_SIZE;
+    const pageSegs = segs.slice(start, start + PAGE_SIZE);
+
+    const rows = pageSegs.map((seg, i) => {
+      const idx = start + i;
       const isT = seg.speaker === therapist;
       const cls = seg.classification;
       const badge = cls ? `<span class="badge ${cls}">${cls}</span>`
@@ -1316,10 +1306,39 @@
       </div>`;
     }).join('');
 
-    const body = document.getElementById('drawerBody');
-    const prev = body.scrollTop;
-    body.innerHTML = overview + kpi + '<div class="section-header"><span>Transcript</span></div>' + rows;
-    body.scrollTop = resetScroll ? 0 : prev;   // keep position when re-rendering after an edit
+    let pager = '';
+    if (totalPages > 1) {
+      pager = `<div class="pagination">
+        <button onclick="drawerGotoPage(1)" ${drawerPage === 1 ? 'disabled' : ''}>«</button>
+        <button onclick="drawerGotoPage(${drawerPage - 1})" ${drawerPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+        <span class="pagination-info">Page <input type="number" min="1" max="${totalPages}" value="${drawerPage}"
+          onchange="drawerJumpToPage(this.value, ${totalPages})"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();drawerJumpToPage(this.value, ${totalPages})}"
+        /> / ${totalPages}</span>
+        <button onclick="drawerGotoPage(${drawerPage + 1})" ${drawerPage === totalPages ? 'disabled' : ''}>Next ›</button>
+        <button onclick="drawerGotoPage(${totalPages})" ${drawerPage === totalPages ? 'disabled' : ''}>»</button>
+      </div>`;
+    }
+
+    const pane = document.getElementById('historyDetail');
+    const scroller = document.getElementById('page-history');
+    const prev = scroller.scrollTop;
+    pane.innerHTML = head + overview + kpi + '<div class="section-header" id="drawerTranscriptTop"><span>Transcript</span></div>' + rows + pager;
+    scroller.scrollTop = resetScroll ? 0 : prev;
+  }
+
+  function drawerGotoPage(n) {
+    drawerPage = n;
+    renderSessionDetail(false);
+    const top = document.getElementById('drawerTranscriptTop');
+    if (top) top.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function drawerJumpToPage(raw, totalPages) {
+    let n = parseInt(raw, 10);
+    if (isNaN(n)) n = drawerPage;
+    n = Math.max(1, Math.min(totalPages, n));
+    drawerGotoPage(n);
   }
 
   function cycleDrawerSpeaker(idx) {
@@ -1328,18 +1347,17 @@
     const i = drawerKnownSpeakers.indexOf(cur);
     seg.speaker = drawerKnownSpeakers[(i + 1) % drawerKnownSpeakers.length];
     persistDrawer();
-    renderDrawer(false);
+    renderSessionDetail(false);
   }
 
   function onDrawerTherapistChange(val) {
     drawerTherapist = val;
     persistDrawer();
-    renderDrawer(false);
+    renderSessionDetail(false);
   }
 
   // Recompute directed/guided counts for the chosen therapist and write the
-  // edited session back to localStorage so the change sticks (and the History
-  // list percentages update too).
+  // edited session back to localStorage so the change sticks (Recent Sessions updates too).
   function persistDrawer() {
     const s = drawerSession;
     const segs = s.segments || [];
@@ -1358,14 +1376,35 @@
     const all = loadSessions();
     const i = all.findIndex(x => x.id === s.id);
     if (i >= 0) { all[i] = s; saveSessions(all); }
-    renderSessionList();
     updateNavHistory();
   }
 
-  function closeSessionDrawer() {
-    document.getElementById('sessionDrawer').classList.remove('open');
-    const bd = document.getElementById('sessionDrawerBackdrop');
-    setTimeout(() => bd.classList.remove('show'), 300);   // let the slide-out finish
+  // Double-click the detail title to rename the session (persists to localStorage).
+  function beginRename(el) {
+    if (!drawerSession) return;
+    el.contentEditable = 'true';
+    el.classList.add('editing');
+    el.focus();
+    const r = document.createRange(); r.selectNodeContents(el);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    el.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      else if (e.key === 'Escape') { el.textContent = drawerSession.filename; el.blur(); }
+    };
+    el.onblur = () => finishRename(el);
+  }
+  function finishRename(el) {
+    el.contentEditable = 'false';
+    el.classList.remove('editing');
+    el.onblur = null; el.onkeydown = null;
+    if (!drawerSession) return;
+    const name = el.textContent.trim();
+    if (!name || name === drawerSession.filename) { el.textContent = drawerSession.filename; return; }
+    drawerSession.filename = name;
+    const all = loadSessions();
+    const i = all.findIndex(x => x.id === drawerSession.id);
+    if (i >= 0) { all[i].filename = name; saveSessions(all); }
+    updateNavHistory();
   }
 
   function drawerExportJSON() {
@@ -1388,36 +1427,74 @@
       stem(drawerSession.filename) + '_report.csv');
   }
 
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.getElementById('sessionDrawerBackdrop').classList.contains('show')) {
-      closeSessionDrawer();
+  function toggleRecentSessions() {
+    const list = document.getElementById('navHistoryList');
+    const chev = document.getElementById('recentChevron');
+    const collapsed = list.classList.toggle('collapsed');
+    if (chev) chev.style.transform = collapsed ? 'rotate(-90deg)' : '';
+  }
+
+  const HISTORY_EMPTY = '<div class="history-detail-empty">Pick a session from <b>Recent Sessions</b> in the sidebar to view its analysis.</div>';
+
+  function clearDetailIf(id) {
+    if (drawerSession && drawerSession.id === id) {
+      drawerSession = null;
+      document.getElementById('historyDetail').innerHTML = HISTORY_EMPTY;
     }
+  }
+
+  // Themed confirm dialog — replaces native confirm() so it matches the UI and
+  // behaves consistently inside Tauri.
+  let _confirmCb = null;
+  function askConfirm(message, onYes, okLabel) {
+    document.getElementById('confirmMsg').textContent = message;
+    document.getElementById('confirmOk').textContent = okLabel || 'Delete';
+    _confirmCb = onYes;
+    document.getElementById('confirmBackdrop').classList.add('show');
+  }
+  function closeConfirm(yes) {
+    document.getElementById('confirmBackdrop').classList.remove('show');
+    const cb = _confirmCb; _confirmCb = null;
+    if (yes && typeof cb === 'function') cb();
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('confirmBackdrop').classList.contains('show')) closeConfirm(false);
   });
 
   function deleteSession(e, id) {
     e.stopPropagation();
-    saveSessions(loadSessions().filter(s => s.id !== id));
-    renderSessionList();
-    updateNavHistory();
+    const s = loadSessions().find(x => x.id === id);
+    askConfirm(`Delete "${s ? s.filename : 'this session'}"? This can't be undone.`, () => {
+      saveSessions(loadSessions().filter(x => x.id !== id));
+      clearDetailIf(id);
+      updateNavHistory();
+    }, 'Delete');
   }
 
   function clearAllSessions() {
-    if (!confirm('Clear all session history?')) return;
-    localStorage.removeItem(STORAGE_KEY);
-    renderSessionList();
-    updateNavHistory();
+    const n = loadSessions().length;
+    if (!n) return;
+    askConfirm(`Clear all ${n} saved session${n > 1 ? 's' : ''}? This can't be undone.`, () => {
+      localStorage.removeItem(STORAGE_KEY);
+      drawerSession = null;
+      document.getElementById('historyDetail').innerHTML = HISTORY_EMPTY;
+      updateNavHistory();
+    }, 'Clear all');
   }
 
   function updateNavHistory() {
-    const sessions = loadSessions().slice(0, 5);
+    const sessions = loadSessions();
     const el = document.getElementById('navHistoryList');
     if (!sessions.length) {
-      el.innerHTML = '<div class="nav-history-item" style="color:var(--text-faint-2);font-style:italic;">No sessions yet</div>';
+      el.innerHTML = '<div class="nav-history-item" style="color:var(--text-faint-2);font-style:italic;cursor:default;">No sessions yet</div>';
       return;
     }
     el.innerHTML = sessions.map(s =>
-      `<div class="nav-history-item" onclick="openSessionDrawer(${s.id})">${esc(s.filename)}</div>`
-    ).join('');
+      `<div class="nav-history-item" data-id="${s.id}" onclick="selectFromNav(${s.id})" title="${esc(s.filename)}">
+        <span class="nav-history-name">${esc(s.filename)}</span>
+        <button class="nav-history-del" onclick="event.stopPropagation(); deleteSession(event, ${s.id})" title="Delete">✕</button>
+      </div>`).join('');
+    highlightSelectedSession();
   }
 
   updateNavHistory();

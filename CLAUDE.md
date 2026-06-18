@@ -17,7 +17,7 @@
 
 ---
 
-## 项目状态（截至 2026-05-05）
+## 项目状态（截至 2026-06-18）
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
@@ -31,6 +31,12 @@
 | P8 | Cue 输出扩展 + 详细统计（Module B/D） | ⬜ 待确认需求 |
 | P9 | 与 SOAP/本体模块集成（Module A/C） | ⬜ 待确认接口 |
 | P10 | 打包分发（Tauri 桌面 + 移动端 API） | ⬜ 待开始 |
+
+> **2026-06-18 UI 重做**：前端设计系统升级——Fraunces（标题衬线）+ IBM Plex Sans/Mono（正文/数据）、
+> teal 强调色（统一 `--accent`，替掉原硬编码蓝）、报告页顶部 **KPI 仪表盘**、**History 改为侧栏导航 + 主区详情**
+> （侧栏 Recent Sessions 可折叠列表选 session → 主区详情：Overview + KPI + transcript，可重指派 speaker / 选 therapist / 分页 / 导出，改动重算并写回 localStorage）。
+> 后端加 **`GET /api/health`** 探测当前后端就绪，前端状态点据此显示 checking/online/offline；ollama 挂时
+> `/api/classify` 返回 503 `{error}` 而非裸 500。上传区分析成功后自动清理、选新文件清旧报告。
 
 ### P6 实时标注设计要点
 
@@ -155,14 +161,15 @@ Server → Client（JSON）：
 - **分类推理**: 双后端可切换 — Ollama API（qwen-bala，GPU）/ BERT（transformers 进程内，~360× 快）；前端模型下拉选 `bert` 即切，详见下方"模型 → BERT 后端"
 - **ASR**: faster-whisper（本地 Whisper）
 - **说话人分离**: pyannote.audio 4.0 + PyAV（不依赖系统 FFmpeg）
-- **前端**: vanilla HTML/CSS/JS
+- **前端**: vanilla HTML/CSS/JS；设计系统 = Fraunces（标题）+ IBM Plex Sans/Mono（正文/数据）+ teal 强调色 `--accent`；报告页 KPI 仪表盘 + History 侧栏导航/详情
 - **打包**: Tauri（闭源桌面应用）
 
 ### 主题（明/暗切换）
 
 - 所有结构色（背景/边框/文字灰阶 + 分类色 D/G/N 含徽章底色）抽成 CSS 变量：`:root` = 暗色默认，`[data-theme="light"]` 覆盖变量值。**改前端切勿再写死十六进制色**，新颜色一律加变量。
 - 右上角按钮 `toggleTheme()` 切换 `<html data-theme>` 并存 `localStorage`；`<head>` 内有首屏脚本提前应用，防刷新闪烁。
-- 强调蓝、话者色块 S1–S5、toast 两主题通用，未变量化。
+- 强调色已统一为 `--accent`（teal，明暗各取值，另有 `--accent-strong`/`--on-accent`）——**新代码一律 `var(--accent)`，别再写死蓝**。话者色块 S1–S5、toast 两主题通用，未变量化。
+- 字体走 Google Fonts CDN（Fraunces / IBM Plex Sans / IBM Plex Mono），变量 `--font-display`/`--font-body`/`--font-mono`；首屏无网时回退 Georgia/系统字体。
 - ⚠️ 坑：变量定义块自身含十六进制字面量，批量 `#xxx → var(--x)` 会污染定义行（自引用）。正确顺序：先抽走定义块 → 全文替换 → 再插回。
 
 ---
@@ -172,9 +179,9 @@ Server → Client（JSON）：
 ```
 arise-care/
 ├── app/
-│   ├── main.py              # FastAPI 入口，静态文件服务
+│   ├── main.py              # FastAPI 入口 + 静态文件；/api/config·/models·/health
 │   ├── routers/
-│   │   ├── classify.py      # POST /api/classify（文本分类）
+│   │   ├── classify.py      # POST /api/classify（文本分类）；ollama 挂返回 503 {error}
 │   │   ├── transcribe.py    # POST /api/transcribe（音频转录）
 │   │   └── pipeline.py      # POST /api/analyze（完整 pipeline）
 │   ├── services/
@@ -187,7 +194,7 @@ arise-care/
 │   ├── models/
 │   │   └── schemas.py       # Pydantic 数据模型
 │   └── static/
-│       └── index.html       # 前端页面（颜色全部 CSS 变量化，见下方"主题"）
+│       └── index.html       # 前端（CSS 变量化主题 + KPI 仪表盘 + History 侧栏导航/详情 + 模型状态点）
 ├── legacy/                   # Node.js 原型（参考用）
 │   ├── server.js
 │   └── index.html
@@ -223,6 +230,11 @@ arise-care/
 POST /api/classify
 Body: { "text": "治疗师话语" }
 Response: { "input": "...", "classification": "DIRECTED|GUIDED|NONE" }
+# ollama 不可达时返回 503 { "error": "Ollama not reachable …" }
+
+GET /api/health
+Response: { "backend":"bert|ollama", "model", "ollama_up", "model_available", "ready" }
+# 前端模型状态点据此显示 checking / online / offline
 
 POST /api/transcribe?diarize=false
 Body: multipart/form-data, file=音频文件
