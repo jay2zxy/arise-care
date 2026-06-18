@@ -289,3 +289,14 @@
 - **WS 协议变化**：`classification` + `speakers_summary` → 合并成 `result {segments,stats}`；新增 `status`（阶段进度）；`utterance` 去掉 speaker 字段
 - **改动**：重写 `stream.py`（删 ECAPA/SpeakerClusterer/分类队列/worker，加 PCM 累积 + WAV + finalize 跑 pipeline）；`pipeline.py` 加 `progress` 回调；`asr.py` 加人数约束；`routers/stream.py` 去 worker 启动；`index.html` 删实时聚类/统计/picker 一整套（~150 行），Stop 后复用 `renderReport`。`speaker.py` 弃用（死代码留参考）
 - **状态**：代码 `import app.main` 通过，**未浏览器实测**（录→停→报告 + 人数）
+
+### 2026-06-18 - Session 11: 前端大改版 + 模型健康检查
+
+按 Anthropic frontend-design 原则给 UI 全面重设计，并补后端就绪检查。前端改动集中在 `app/static/index.html`，后端加 `/api/health`。
+
+- **设计系统**：换字体——Fraunces（标题衬线）+ IBM Plex Sans/Mono（正文/数据），弃 Google Sans；强调色统一成 teal `--accent`（另有 `--accent-strong`/`--on-accent`），替掉散落硬编码蓝；背景保持中性灰（试过暖纸/光晕/点阵，用户选回中性）
+- **报告仪表盘**：报告顶部加一排 KPI 大数字卡（Total Cues / Directed% / Guided% / Speakers / Duration），等宽数字 + 顶部色条 + 迷你占比条 + 错峰入场动画
+- **History 重构**：列表从主区搬到**侧栏 Recent Sessions**（可折叠下拉、完整列表、单条删除、清空）；点一条 → 主区 master-detail 详情（Overview + KPI + transcript，可重指派 speaker / 选 therapist / 分页 30 条 / 导出 / **双击标题重命名**），改动重算并写回 localStorage。演进过 浮层抽屉 → 分栏 → 最终定为侧栏导航（窄屏列表收进汉堡菜单）
+- **后端**：新增 `GET /api/health`（BERT 恒就绪；Ollama 探测 daemon + 模型是否安装）；`classify.py` ollama 不可达返回 503 `{error}` 而非裸 500；前端状态点据此显示 checking/online/offline + 轮询，分类/分析前做就绪预检
+- **保护**：删除/清空走主题化确认弹窗（替原生 confirm，Tauri 下稳）；上传分析成功后清理上传区、选新文件清旧报告
+- **教训**：`git checkout <branch> -- <path>` 在切分支失败后仍会用**目标分支版本覆盖工作区未提交改动**，一度抹掉一批未 commit 的前端改动（已凭对话记录重建）。切分支/同步前务必先提交干净。详见 lessons.md
